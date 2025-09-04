@@ -194,7 +194,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
                   coordinates: mapbox.Position(
                       _branches.first.longitude, _branches.first.latitude))
               : mapbox.Point(
-                  coordinates: mapbox.Position(120.9842, 14.5995)), // Manila
+                  coordinates: mapbox.Position(120.9842, 14.5995)),
           zoom: 12,
         ),
         onMapCreated: (map) async {
@@ -202,6 +202,8 @@ class _BranchMapPageState extends State<BranchMapPage> {
           _pointManager = await map.annotations.createPointAnnotationManager();
 
           if (_markerBytes == null) await _loadMarker();
+
+          // Add branch markers
           await _updateMarkers();
         },
       ),
@@ -217,7 +219,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true, // gradient goes behind AppBar
+      extendBodyBehindAppBar: true,
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -242,11 +244,10 @@ class _BranchMapPageState extends State<BranchMapPage> {
                     fontSize: 20,
                   ),
                 ),
-                backgroundColor: Colors.transparent, // remove gray
+                backgroundColor: Colors.transparent,
                 foregroundColor: Colors.blue,
-                elevation: 0, // no shadow
+                elevation: 0,
               ),
-              // Hero Section
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
