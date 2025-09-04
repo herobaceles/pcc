@@ -10,6 +10,7 @@ class ActionButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
+        // Near Me Button
         Expanded(
           child: ElevatedButton.icon(
             icon: const Icon(Icons.near_me),
@@ -24,15 +25,18 @@ class ActionButtons extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
+        // Filter Button
         Expanded(
           child: ElevatedButton.icon(
             icon: const Icon(Icons.filter_list),
             label: const Text("Filter"),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.grey[200],
-              foregroundColor: Colors.black,
+              backgroundColor: Colors.white,      // White background
+              foregroundColor: Colors.blue,       // Blue text & icon
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 6,                       // Shadow elevation
+              shadowColor: Colors.blue,           // Blue shadow
             ),
             onPressed: onFilter ?? () {},
           ),

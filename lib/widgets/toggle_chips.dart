@@ -9,34 +9,72 @@ class ToggleChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        ChoiceChip(
-          label: const Text("List"),
-          selected: !showMap,
-          selectedColor: Colors.blue,
-          backgroundColor: Colors.grey[200],
-          labelStyle: TextStyle(
-            color: !showMap ? Colors.white : Colors.black,
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: _buildButton(
+            label: "List",
+            icon: Icons.list,
+            selected: !showMap,
+            onTap: () => onToggle(false),
           ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          onSelected: (_) => onToggle(false),
         ),
         const SizedBox(width: 8),
-        ChoiceChip(
-          label: const Text("Map"),
-          selected: showMap,
-          selectedColor: Colors.blue,
-          backgroundColor: Colors.grey[200],
-          labelStyle: TextStyle(
-            color: showMap ? Colors.white : Colors.black,
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: _buildButton(
+            label: "Map",
+            icon: Icons.map,
+            selected: showMap,
+            onTap: () => onToggle(true),
           ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          onSelected: (_) => onToggle(true),
         ),
       ],
+    );
+  }
+
+  Widget _buildButton({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        height: 50,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? Colors.blue : const Color(0xFFFFFFFF),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: AnimatedScale(
+          scale: selected ? 1.05 : 1.0, // Slightly enlarge when selected
+          duration: const Duration(milliseconds: 250),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Icon(
+                  icon,
+                  key: ValueKey(selected), // Rebuild to animate color
+                  color: selected ? Colors.white : Colors.black,
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 250),
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+                child: Text(label),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
