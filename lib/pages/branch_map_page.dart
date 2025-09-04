@@ -35,7 +35,6 @@ class _BranchMapPageState extends State<BranchMapPage> {
     _loadMarker();
   }
 
-  /// Load branch data from JSON via service
   Future<void> _loadBranches() async {
     try {
       final branches = await BranchService.loadBranches();
@@ -45,17 +44,17 @@ class _BranchMapPageState extends State<BranchMapPage> {
     }
   }
 
-  /// Load marker image
   Future<void> _loadMarker() async {
     _markerBytes =
         (await rootBundle.load('assets/marker.png')).buffer.asUint8List();
   }
 
-  /// Filter branches by search query & nearby toggle
   List<Branch> get _filteredBranches {
-    var filtered = _branches
-        .where((b) => b.name.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
+    final query = _searchQuery.toLowerCase();
+    var filtered = _branches.where((b) {
+      final searchableText = "${b.name} ${b.address}".toLowerCase();
+      return searchableText.contains(query);
+    }).toList();
 
     if (_showNearbyOnly && _userPosition != null) {
       filtered = filtered.where((b) {
@@ -65,7 +64,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
           b.latitude,
           b.longitude,
         );
-        return distance / 1000 <= 10; // only within 10 km
+        return distance / 1000 <= 10;
       }).toList();
 
       filtered.sort((a, b) {
@@ -80,7 +79,33 @@ class _BranchMapPageState extends State<BranchMapPage> {
     return filtered;
   }
 
-  /// Fly map to a specific branch
+  RichText highlightText(String text, String query, {TextStyle? style}) {
+    if (query.isEmpty) return RichText(text: TextSpan(text: text, style: style));
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    int start = 0;
+
+    while (true) {
+      final index = lowerText.indexOf(lowerQuery, start);
+      if (index < 0) {
+        spans.add(TextSpan(text: text.substring(start), style: style));
+        break;
+      }
+      if (index > start) {
+        spans.add(TextSpan(text: text.substring(start, index), style: style));
+      }
+      spans.add(TextSpan(
+        text: text.substring(index, index + query.length),
+        style: style?.copyWith(
+            backgroundColor: Colors.yellow, fontWeight: FontWeight.bold),
+      ));
+      start = index + query.length;
+    }
+
+    return RichText(text: TextSpan(children: spans, style: style));
+  }
+
   Future<void> _flyToBranch(Branch branch) async {
     if (_mapboxMap == null) return;
 
@@ -95,7 +120,6 @@ class _BranchMapPageState extends State<BranchMapPage> {
     );
   }
 
-  /// Fly map to user's current location
   Future<void> _flyToUserLocation() async {
     try {
       if (!await geo.Geolocator.isLocationServiceEnabled()) return;
@@ -126,12 +150,13 @@ class _BranchMapPageState extends State<BranchMapPage> {
         ),
         mapbox.MapAnimationOptions(duration: 1000),
       );
+
+      await _updateMarkers();
     } catch (e) {
       debugPrint("Error getting location: $e");
     }
   }
 
-  /// Update map markers
   Future<void> _updateMarkers() async {
     if (_pointManager == null || _markerBytes == null) return;
 
@@ -154,29 +179,35 @@ class _BranchMapPageState extends State<BranchMapPage> {
     }
   }
 
-  /// Build Mapbox Map widget
   Widget _buildMap() {
-    return mapbox.MapWidget(
-      styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
-      cameraOptions: mapbox.CameraOptions(
-        center: _branches.isNotEmpty
-            ? mapbox.Point(
-                coordinates: mapbox.Position(
-                    _branches.first.longitude, _branches.first.latitude))
-            : mapbox.Point(coordinates: mapbox.Position(0, 0)),
-        zoom: 14,
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
       ),
-      onMapCreated: (map) async {
-        _mapboxMap = map;
-        _pointManager = await map.annotations.createPointAnnotationManager();
+      clipBehavior: Clip.hardEdge,
+      child: mapbox.MapWidget(
+        styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
+        cameraOptions: mapbox.CameraOptions(
+          center: _branches.isNotEmpty
+              ? mapbox.Point(
+                  coordinates: mapbox.Position(
+                      _branches.first.longitude, _branches.first.latitude))
+              : mapbox.Point(
+                  coordinates: mapbox.Position(120.9842, 14.5995)), // Manila
+          zoom: 12,
+        ),
+        onMapCreated: (map) async {
+          _mapboxMap = map;
+          _pointManager = await map.annotations.createPointAnnotationManager();
 
-        if (_markerBytes == null) await _loadMarker();
-        await _updateMarkers();
-      },
+          if (_markerBytes == null) await _loadMarker();
+          await _updateMarkers();
+        },
+      ),
     );
   }
 
-  /// Handle branch selection
   Future<void> _selectBranch(Branch branch) async {
     setState(() => _showMap = true);
     await Future.delayed(const Duration(milliseconds: 300));
@@ -186,95 +217,136 @@ class _BranchMapPageState extends State<BranchMapPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text("PCC SUS"),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.blue,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const Text(
-                    "Find your Nearest",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 22),
+      extendBodyBehindAppBar: true, // gradient goes behind AppBar
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white,
+              Colors.white,
+              Colors.blueAccent,
+            ],
+            stops: [0.0, 0.85, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              AppBar(
+                title: const Text(
+                  "PCC SUS",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 20,
                   ),
-                  const Text(
-                    "PCC SUPP",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 28,
+                ),
+                backgroundColor: Colors.transparent, // remove gray
+                foregroundColor: Colors.blue,
+                elevation: 0, // no shadow
+              ),
+              // Hero Section
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "Find your Nearest",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue),
-                  ),
-                  const SizedBox(height: 16),
-                  SearchField(
-                    onChanged: (val) {
-                      setState(() => _searchQuery = val);
-                      _updateMarkers();
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ActionButtons(onNearMe: () async {
-                          await _flyToUserLocation();
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      "PCC SUPP",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      "Bringing quality healthcare closer to you. Your trusted PCC centers are here to care for you and your loved ones, anytime you need us!",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF242323),
+                        fontWeight: FontWeight.w600,
+                        fontStyle: FontStyle.italic,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SearchField(
+                      onChanged: (val) {
+                        setState(() => _searchQuery = val);
+                        _updateMarkers();
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ActionButtons(onNearMe: () async {
+                            await _flyToUserLocation();
+                            _updateMarkers();
+                          }),
+                        ),
+                        const SizedBox(width: 8),
+                        if (_showNearbyOnly)
+                          ElevatedButton(
+                            onPressed: () {
+                              setState(() => _showNearbyOnly = false);
+                              _updateMarkers();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.blue,
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 10, horizontal: 20),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4)),
+                              elevation: 6,
+                              shadowColor: Colors.blue,
+                            ),
+                            child: const Text(
+                              "View All",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ToggleChips(
+                        showMap: _showMap,
+                        onToggle: (val) {
+                          setState(() => _showMap = val);
                           _updateMarkers();
                         }),
-                      ),
-                      const SizedBox(width: 8),
-                      if (_showNearbyOnly)
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() => _showNearbyOnly = false);
-                            _updateMarkers();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.blue,
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 10, horizontal: 20),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4)),
-                            elevation: 6,
-                            shadowColor: Colors.blue,
-                          ),
-                          child: const Text(
-                            "View All",
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, color: Colors.blue),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  ToggleChips(
-                      showMap: _showMap,
-                      onToggle: (val) {
-                        setState(() => _showMap = val);
-                        _updateMarkers();
-                      }),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: _showMap
-                  ? _buildMap()
-                  : BranchList(
-                      branches: _filteredBranches,
-                      onSelect: _selectBranch,
-                      userPosition: _userPosition,
-                    ),
-            ),
-          ],
+              Expanded(
+                child: _showMap
+                    ? _buildMap()
+                    : BranchList(
+                        branches: _filteredBranches,
+                        onSelect: _selectBranch,
+                        userPosition: _userPosition,
+                        searchQuery: _searchQuery,
+                        highlightTextBuilder: highlightText,
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
