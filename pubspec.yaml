@@ -19,13 +19,17 @@ dependencies:
 
   # Cupertino Icons for iOS-style icons
   cupertino_icons: ^1.0.8
+
+  # Location services
   geolocator: ^10.1.0
+
+  # URL launcher (only this is needed)
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  # Recommended lints for best practices
   flutter_lints: ^5.0.0
 
 flutter:
@@ -33,4 +37,4 @@ flutter:
 
   assets:
     - assets/branches.json
-    - assets/marker.png   # 🔥 Add your marker image here
+    - assets/marker.png
