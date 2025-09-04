@@ -1,0 +1,36 @@
+name: pccmobile
+description: A new Flutter project.
+
+# Prevent accidental publishing
+publish_to: 'none'
+
+# App versioning
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Mapbox for maps integration
+  mapbox_maps_flutter: ^2.1.0
+
+  # Cupertino Icons for iOS-style icons
+  cupertino_icons: ^1.0.8
+  geolocator: ^10.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Recommended lints for best practices
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/branches.json
+    - assets/marker.png   # 🔥 Add your marker image here
