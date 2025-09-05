@@ -20,19 +20,31 @@ class BranchList extends StatelessWidget {
     required this.highlightTextBuilder,
   });
 
-  void _launchNavigation(Branch branch) async {
-    final destination = '${branch.latitude},${branch.longitude}';
-    final url =
-        'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving';
+void _launchNavigation(Branch branch) async {
+  final lat = branch.latitude.toStringAsFixed(6);
+  final lng = branch.longitude.toStringAsFixed(6);
 
-    try {
-      final launched =
-          await launchUrlString(url, mode: LaunchMode.externalApplication);
-      if (!launched) debugPrint('Could not launch navigation.');
-    } catch (e) {
-      debugPrint('Error launching navigation: $e');
+  // Android app URL
+  final geoUrl = 'geo:$lat,$lng?q=$lat,$lng(${Uri.encodeComponent(branch.name)})';
+  // iOS app URL
+  final iosUrl = 'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving';
+  // Fallback web URL
+  final webUrl = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
+
+  try {
+    if (await canLaunchUrlString(geoUrl)) {
+      await launchUrlString(geoUrl, mode: LaunchMode.externalApplication);
+    } else if (await canLaunchUrlString(iosUrl)) {
+      await launchUrlString(iosUrl, mode: LaunchMode.externalApplication);
+    } else if (await canLaunchUrlString(webUrl)) {
+      await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+    } else {
+      debugPrint("Could not launch Google Maps.");
     }
+  } catch (e) {
+    debugPrint("Error launching navigation: $e");
   }
+}
 
   void _showBranchDialog(BuildContext context, Branch branch) {
     FocusScope.of(context).unfocus();
@@ -48,12 +60,11 @@ class BranchList extends StatelessWidget {
           1000; // km
     }
 
-    mapbox.MapboxMap? previewMap;
     mapbox.PointAnnotationManager? pointManager;
 
     showDialog(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
+      barrierColor: Colors.black.withAlpha((0.5 * 255).toInt()),
       builder: (context) {
         return Dialog(
           backgroundColor: Colors.white,
@@ -78,7 +89,7 @@ class BranchList extends StatelessWidget {
                     margin: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
+                      border: Border.all(color: Colors.blue.withAlpha((0.3*255).toInt()), width: 1),
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: mapbox.MapWidget(
@@ -90,7 +101,6 @@ class BranchList extends StatelessWidget {
                         zoom: 14,
                       ),
                       onMapCreated: (map) async {
-                        previewMap = map;
                         pointManager = await map.annotations.createPointAnnotationManager();
                         await pointManager!.create(
                           mapbox.PointAnnotationOptions(

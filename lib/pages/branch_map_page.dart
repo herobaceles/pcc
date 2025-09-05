@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -140,32 +141,46 @@ class _BranchMapPageState extends State<BranchMapPage> {
   }
 
   Future<void> _flyToUserLocation() async {
-    try {
-      if (!await geo.Geolocator.isLocationServiceEnabled()) return;
+  try {
+    setState(() => _isSearching = true); // start loading
 
-      var permission = await geo.Geolocator.checkPermission();
-      if (permission == geo.LocationPermission.denied) {
-        permission = await geo.Geolocator.requestPermission();
-        if (permission == geo.LocationPermission.denied) return;
-      }
-      if (permission == geo.LocationPermission.deniedForever) return;
-
-      final pos = await geo.Geolocator.getCurrentPosition(
-        desiredAccuracy: geo.LocationAccuracy.high,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _userPosition = pos;
-        _showNearbyOnly = true;
-      });
-
-      await _flyToLocation(mapbox.Position(pos.longitude, pos.latitude), zoom: 14);
-      await _safeUpdateMarkers();
-    } catch (e) {
-      debugPrint("Error getting location: $e");
+    if (!await geo.Geolocator.isLocationServiceEnabled()) {
+      setState(() => _isSearching = false);
+      return;
     }
+
+    var permission = await geo.Geolocator.checkPermission();
+    if (permission == geo.LocationPermission.denied) {
+      permission = await geo.Geolocator.requestPermission();
+      if (permission == geo.LocationPermission.denied) {
+        setState(() => _isSearching = false);
+        return;
+      }
+    }
+    if (permission == geo.LocationPermission.deniedForever) {
+      setState(() => _isSearching = false);
+      return;
+    }
+
+    final pos = await geo.Geolocator.getCurrentPosition(
+      desiredAccuracy: geo.LocationAccuracy.high,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _userPosition = pos;
+      _showNearbyOnly = true;
+    });
+
+    await _flyToLocation(mapbox.Position(pos.longitude, pos.latitude), zoom: 14);
+    await _safeUpdateMarkers();
+  } catch (e) {
+    debugPrint("Error getting location: $e");
+  } finally {
+    setState(() => _isSearching = false); // stop loading
   }
+}
+
 
   Future<mapbox.Position?> _geocodeLocation(String query) async {
     const accessToken =
@@ -214,6 +229,40 @@ class _BranchMapPageState extends State<BranchMapPage> {
           ),
         );
       }
+
+      // Zoom out to show all filtered branches
+      if (_mapboxMap != null && _filteredBranches.isNotEmpty) {
+        double minLat = _filteredBranches.first.latitude;
+        double maxLat = _filteredBranches.first.latitude;
+        double minLng = _filteredBranches.first.longitude;
+        double maxLng = _filteredBranches.first.longitude;
+
+        for (var b in _filteredBranches) {
+          if (b.latitude < minLat) minLat = b.latitude;
+          if (b.latitude > maxLat) maxLat = b.latitude;
+          if (b.longitude < minLng) minLng = b.longitude;
+          if (b.longitude > maxLng) maxLng = b.longitude;
+        }
+
+        // Center coordinates
+        final centerLat = (minLat + maxLat) / 2;
+        final centerLng = (minLng + maxLng) / 2;
+
+        // Estimate zoom level based on distance (simplified)
+        final latDiff = maxLat - minLat;
+        final lngDiff = maxLng - minLng;
+        double zoom = 12 - (latDiff + lngDiff) * 10;
+        if (zoom < 3) zoom = 3;
+        if (zoom > 16) zoom = 16;
+
+        await _mapboxMap!.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(coordinates: mapbox.Position(centerLng, centerLat)),
+            zoom: zoom,
+          ),
+          mapbox.MapAnimationOptions(duration: 1000),
+        );
+      }
     } catch (e) {
       debugPrint("Marker update failed: $e");
     }
@@ -249,24 +298,26 @@ class _BranchMapPageState extends State<BranchMapPage> {
                   const SizedBox(height: 16),
 
                   sf.SearchField(
-                    onChanged: (_) {},
-                    onSubmitted: (val) async {
-                      final query = val.trim();
-                      setState(() => _searchQuery = query);
+  onChanged: (val) {
+    // Update search query immediately to filter list
+    setState(() => _searchQuery = val.trim());
+  },
+  onSubmitted: (val) async {
+    final query = val.trim();
+    if (query.isEmpty || query == _lastMapSearchQuery || _mapboxMap == null) return;
 
-                      if (query.isNotEmpty && query != _lastMapSearchQuery && _mapboxMap != null) {
-                        setState(() => _isSearching = true);
-                        final pos = await _geocodeLocation(query);
-                        if (pos != null) {
-                          await _flyToLocation(pos, zoom: 14);
-                          _lastMapSearchQuery = query;
-                        }
-                        setState(() => _isSearching = false);
-                      }
+    setState(() => _isSearching = true); // show loading
 
-                      await _safeUpdateMarkers();
-                    },
-                  ),
+    final pos = await _geocodeLocation(query);
+    if (pos != null) {
+      await _flyToLocation(pos);
+      _lastMapSearchQuery = query;
+    }
+    await _safeUpdateMarkers();
+    setState(() => _isSearching = false); // hide loading
+  },
+),
+
                   const SizedBox(height: 16),
 
                   Row(
