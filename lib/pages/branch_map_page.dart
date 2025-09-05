@@ -5,10 +5,10 @@ import 'package:geolocator/geolocator.dart' as geo;
 
 import '../models/branch.dart';
 import '../services/branch_service.dart';
-import '../widgets/search_field.dart';
+import '../widgets/search_field.dart' as sf; // added prefix
 import '../widgets/action_buttons.dart';
 import '../widgets/toggle_chips.dart';
-import '../widgets/branch_list.dart';
+import '../widgets/branch_list.dart' as bl; // added prefix
 
 class BranchMapPage extends StatefulWidget {
   const BranchMapPage({super.key});
@@ -38,6 +38,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
   Future<void> _loadBranches() async {
     try {
       final branches = await BranchService.loadBranches();
+      if (!mounted) return;
       setState(() => _branches = branches);
     } catch (e) {
       debugPrint("Error loading branches: $e");
@@ -50,11 +51,15 @@ class _BranchMapPageState extends State<BranchMapPage> {
   }
 
   List<Branch> get _filteredBranches {
-    final query = _searchQuery.toLowerCase();
-    var filtered = _branches.where((b) {
-      final searchableText = "${b.name} ${b.address}".toLowerCase();
-      return searchableText.contains(query);
-    }).toList();
+    final query = _searchQuery.trim().toLowerCase();
+    var filtered = _branches;
+
+    if (query.isNotEmpty) {
+      filtered = filtered.where((b) {
+        final searchable = "${b.name} ${b.address}".toLowerCase();
+        return searchable.contains(query);
+      }).toList();
+    }
 
     if (_showNearbyOnly && _userPosition != null) {
       filtered = filtered.where((b) {
@@ -64,7 +69,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
           b.latitude,
           b.longitude,
         );
-        return distance / 1000 <= 10;
+        return distance <= 10000;
       }).toList();
 
       filtered.sort((a, b) {
@@ -80,35 +85,42 @@ class _BranchMapPageState extends State<BranchMapPage> {
   }
 
   RichText highlightText(String text, String query, {TextStyle? style}) {
-    if (query.isEmpty) return RichText(text: TextSpan(text: text, style: style));
+    final effectiveStyle = style ?? const TextStyle(color: Colors.black);
+    final trimmedQuery = query.trim();
+
+    if (trimmedQuery.isEmpty) {
+      return RichText(text: TextSpan(text: text, style: effectiveStyle));
+    }
+
     final lowerText = text.toLowerCase();
-    final lowerQuery = query.toLowerCase();
+    final lowerQuery = trimmedQuery.toLowerCase();
     final spans = <TextSpan>[];
     int start = 0;
 
     while (true) {
       final index = lowerText.indexOf(lowerQuery, start);
       if (index < 0) {
-        spans.add(TextSpan(text: text.substring(start), style: style));
+        spans.add(TextSpan(text: text.substring(start), style: effectiveStyle));
         break;
       }
       if (index > start) {
-        spans.add(TextSpan(text: text.substring(start, index), style: style));
+        spans.add(TextSpan(text: text.substring(start, index), style: effectiveStyle));
       }
       spans.add(TextSpan(
-        text: text.substring(index, index + query.length),
-        style: style?.copyWith(
-            backgroundColor: Colors.yellow, fontWeight: FontWeight.bold),
+        text: text.substring(index, index + lowerQuery.length),
+        style: effectiveStyle.copyWith(
+          backgroundColor: const Color.fromARGB(110, 4, 217, 228),
+          fontWeight: FontWeight.bold,
+        ),
       ));
-      start = index + query.length;
+      start = index + lowerQuery.length;
     }
 
-    return RichText(text: TextSpan(children: spans, style: style));
+    return RichText(text: TextSpan(children: spans, style: effectiveStyle));
   }
 
   Future<void> _flyToBranch(Branch branch) async {
     if (_mapboxMap == null) return;
-
     await _mapboxMap!.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
@@ -133,9 +145,9 @@ class _BranchMapPageState extends State<BranchMapPage> {
 
       final pos = await geo.Geolocator.getCurrentPosition(
         desiredAccuracy: geo.LocationAccuracy.high,
-        forceAndroidLocationManager: true,
       );
 
+      if (!mounted) return;
       setState(() {
         _userPosition = pos;
         _showNearbyOnly = true;
@@ -159,7 +171,6 @@ class _BranchMapPageState extends State<BranchMapPage> {
 
   Future<void> _updateMarkers() async {
     if (_pointManager == null || _markerBytes == null) return;
-
     await _pointManager!.deleteAll();
 
     for (final branch in _filteredBranches) {
@@ -180,13 +191,10 @@ class _BranchMapPageState extends State<BranchMapPage> {
   }
 
   Widget _buildMap() {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      clipBehavior: Clip.hardEdge,
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.4,
       child: mapbox.MapWidget(
+        textureView: true,
         styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
         cameraOptions: mapbox.CameraOptions(
           center: _branches.isNotEmpty
@@ -199,18 +207,22 @@ class _BranchMapPageState extends State<BranchMapPage> {
         ),
         onMapCreated: (map) async {
           _mapboxMap = map;
-          _pointManager = await map.annotations.createPointAnnotationManager();
-
-          if (_markerBytes == null) await _loadMarker();
-
-          // Add branch markers
-          await _updateMarkers();
+          try {
+            _pointManager = await map.annotations.createPointAnnotationManager();
+            if (_markerBytes == null) {
+              await _loadMarker();
+            }
+            Future.delayed(const Duration(milliseconds: 500), _updateMarkers);
+          } catch (e) {
+            debugPrint("Error setting up Mapbox: $e");
+          }
         },
       ),
     );
   }
 
   Future<void> _selectBranch(Branch branch) async {
+    FocusScope.of(context).unfocus();
     setState(() => _showMap = true);
     await Future.delayed(const Duration(milliseconds: 300));
     await _flyToBranch(branch);
@@ -219,47 +231,37 @@ class _BranchMapPageState extends State<BranchMapPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text(
+          "PCC SUS",
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+        ),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.blue,
+        elevation: 0,
+      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.white,
-              Colors.white,
-              Colors.blueAccent,
-            ],
+            colors: [Colors.white, Colors.white, Color.fromARGB(255, 255, 255, 255)],
             stops: [0.0, 0.85, 1.0],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              AppBar(
-                title: const Text(
-                  "PCC SUS",
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 20,
-                  ),
-                ),
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.blue,
-                elevation: 0,
-              ),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const Text(
-                      "Find your Nearest",
+                      "Find Your Nearest",
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style:
+                          TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     const Text(
@@ -273,7 +275,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      "Bringing quality healthcare closer to you. Your trusted PCC centers are here to care for you and your loved ones, anytime you need us!",
+                      "Bringing quality healthcare closer to you...",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 16,
@@ -284,27 +286,25 @@ class _BranchMapPageState extends State<BranchMapPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    SearchField(
-                      onChanged: (val) {
-                        setState(() => _searchQuery = val);
-                        _updateMarkers();
-                      },
-                    ),
+
                     const SizedBox(height: 16),
+
                     Row(
                       children: [
                         Expanded(
-                          child: ActionButtons(onNearMe: () async {
-                            await _flyToUserLocation();
-                            _updateMarkers();
-                          }),
+                          child: ActionButtons(
+                            onNearMe: () async {
+                              await _flyToUserLocation();
+                              await _safeUpdateMarkers();
+                            },
+                          ),
                         ),
                         const SizedBox(width: 8),
                         if (_showNearbyOnly)
                           ElevatedButton(
                             onPressed: () {
                               setState(() => _showNearbyOnly = false);
-                              _updateMarkers();
+                              _safeUpdateMarkers();
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
@@ -319,26 +319,32 @@ class _BranchMapPageState extends State<BranchMapPage> {
                             child: const Text(
                               "View All",
                               style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue),
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
                             ),
                           ),
                       ],
                     ),
                     const SizedBox(height: 16),
+
                     ToggleChips(
-                        showMap: _showMap,
-                        onToggle: (val) {
-                          setState(() => _showMap = val);
-                          _updateMarkers();
-                        }),
+                      showMap: _showMap,
+                      onToggle: (val) {
+                        FocusScope.of(context).unfocus();
+                        setState(() => _showMap = val);
+                        _safeUpdateMarkers();
+                      },
+                    ),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
+
               Expanded(
                 child: _showMap
                     ? _buildMap()
-                    : BranchList(
+                    : bl.BranchList(
                         branches: _filteredBranches,
                         onSelect: _selectBranch,
                         userPosition: _userPosition,
@@ -351,5 +357,31 @@ class _BranchMapPageState extends State<BranchMapPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _safeUpdateMarkers() async {
+    if (_pointManager == null || _markerBytes == null) return;
+    if (!mounted) return;
+
+    try {
+      await _pointManager!.deleteAll();
+      for (final branch in _filteredBranches) {
+        await _pointManager!.create(
+          mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(
+              coordinates: mapbox.Position(branch.longitude, branch.latitude),
+            ),
+            iconImage: "marker",
+            iconSize: 5,
+            textField: branch.name,
+            textSize: 14,
+            textColor: 0xFF0000FF,
+            textOffset: [0, 2.5],
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Marker update failed: $e");
+    }
   }
 }

@@ -25,6 +25,7 @@ dependencies:
 
   # URL launcher (only this is needed)
   url_launcher: ^6.3.2
+  huawei_location: ^6.11.0+300
 
 dev_dependencies:
   flutter_test:

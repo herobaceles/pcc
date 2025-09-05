@@ -9,7 +9,11 @@
     <application
         android:label="PCC FINDER"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+        android:hardwareAccelerated="true"
+        android:usesCleartextTraffic="true"
+        >
 
         <activity
             android:name=".MainActivity"

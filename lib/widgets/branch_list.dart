@@ -35,6 +35,8 @@ class BranchList extends StatelessWidget {
   }
 
   void _showBranchDialog(BuildContext context, Branch branch) {
+    FocusScope.of(context).unfocus();
+
     double? distance;
     if (userPosition != null) {
       distance = geo.Geolocator.distanceBetween(
@@ -51,10 +53,14 @@ class BranchList extends StatelessWidget {
 
     showDialog(
       context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) {
         return Dialog(
+          backgroundColor: Colors.white,
           insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
           child: SizedBox(
             height: 450,
             child: Column(
@@ -74,7 +80,7 @@ class BranchList extends StatelessWidget {
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
                     ),
                     clipBehavior: Clip.hardEdge,
@@ -120,13 +126,21 @@ class BranchList extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      highlightTextBuilder(
-                        branch.address,
-                        searchQuery,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Colors.black87,
-                        ),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, color: Colors.red, size: 18),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: highlightTextBuilder(
+                              branch.address,
+                              searchQuery,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       if (distance != null)
                         Padding(
@@ -178,7 +192,7 @@ class BranchList extends StatelessWidget {
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
                             ),
@@ -194,7 +208,7 @@ class BranchList extends StatelessWidget {
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
                             ),
@@ -226,71 +240,88 @@ class BranchList extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: ListView.builder(
-        itemCount: branches.length,
-        itemBuilder: (context, i) {
-          final branch = branches[i];
-        return InkWell(
-  onTap: () => _showBranchDialog(context, branch),
-  borderRadius: BorderRadius.circular(12),
-  child: Container(
-    margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4), // more space between tiles
-    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16), // more inner padding
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(12),
-      color: Colors.white,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.blue.withOpacity(0.2),
-          blurRadius: 6,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    ),
-    child: Row(
-      children: [
-        Container(
-          width: 48, // slightly bigger icon container
-          height: 48,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(Icons.location_on, color: Colors.blue),
-        ),
-        const SizedBox(width: 16), // more spacing between icon and text
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              highlightTextBuilder(
-                branch.name,
-                searchQuery,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue,
-                ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 🔹 Header showing total branches
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              "Showing ${branches.length} branch${branches.length == 1 ? '' : 'es'}",
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
               ),
-              const SizedBox(height: 4),
-              highlightTextBuilder(
-                branch.address,
-                searchQuery,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black87,
-                  fontWeight: FontWeight.normal,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ],
-    ),
-  ),
-);
-        },
+
+          // 🔹 Branch List
+          Expanded(
+            child: ListView.builder(
+              itemCount: branches.length,
+              itemBuilder: (context, i) {
+                final branch = branches[i];
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        branch.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, color: Colors.red, size: 18),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: highlightTextBuilder(
+                              branch.address,
+                              searchQuery,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => _showBranchDialog(context, branch),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text("View Details"),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+
