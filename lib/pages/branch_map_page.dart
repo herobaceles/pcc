@@ -52,47 +52,142 @@ class _BranchMapPageState extends State<BranchMapPage> {
         (await rootBundle.load('assets/marker.png')).buffer.asUint8List();
   }
 
+  // Branch list filtering
   List<Branch> get _filteredBranches {
-    final query = _searchQuery.trim().toLowerCase();
-    var filtered = _branches;
+    final query = _searchQuery.toLowerCase().trim();
+    if (query.isEmpty) return _branches;
 
-    if (query.isNotEmpty) {
-      filtered = filtered.where((b) {
-        final searchable = "${b.name} ${b.address}".toLowerCase();
-        return searchable.contains(query);
-      }).toList();
+    return _branches.where((b) {
+      final searchable = "${b.name} ${b.address}".toLowerCase();
+      return searchable.contains(query);
+    }).toList();
+  }
+
+  // Mapbox geocoding for live map search
+  Future<mapbox.Position?> _geocodeLocation(String query) async {
+    const accessToken =
+        "pk.eyJ1Ijoic2FsYW0xNyIsImEiOiJjbHpxb3lub3IwZnJxMmtxODI5czJscHcyIn0.hPR3kEJ3J-kQ4OiZZL8WFA";
+    final url = Uri.parse(
+        "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?access_token=$accessToken&limit=1&country=PH");
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['features'] != null && data['features'].isNotEmpty) {
+          final coords = data['features'][0]['center'];
+          return mapbox.Position(coords[0], coords[1]);
+        }
+      }
+    } catch (e) {
+      debugPrint("Geocoding failed: $e");
     }
+    return null;
+  }
 
-    if (_showNearbyOnly && _userPosition != null) {
-      filtered = filtered.where((b) {
-        final distance = geo.Geolocator.distanceBetween(
-          _userPosition!.latitude,
-          _userPosition!.longitude,
-          b.latitude,
-          b.longitude,
-        );
-        return distance <= 10000;
-      }).toList();
+  Future<void> _flyToLocation(mapbox.Position pos, {double zoom = 12}) async {
+    if (_mapboxMap == null) return;
+    await _mapboxMap!.flyTo(
+      mapbox.CameraOptions(center: mapbox.Point(coordinates: pos), zoom: zoom),
+      mapbox.MapAnimationOptions(duration: 1000),
+    );
+  }
 
-      filtered.sort((a, b) {
-        final distA = geo.Geolocator.distanceBetween(
-            _userPosition!.latitude, _userPosition!.longitude, a.latitude, a.longitude);
-        final distB = geo.Geolocator.distanceBetween(
-            _userPosition!.latitude, _userPosition!.longitude, b.latitude, b.longitude);
-        return distA.compareTo(distB);
+  // User location
+  Future<void> _flyToUserLocation() async {
+    try {
+      if (!await geo.Geolocator.isLocationServiceEnabled()) return;
+
+      var permission = await geo.Geolocator.checkPermission();
+      if (permission == geo.LocationPermission.denied) {
+        permission = await geo.Geolocator.requestPermission();
+        if (permission == geo.LocationPermission.denied) return;
+      }
+      if (permission == geo.LocationPermission.deniedForever) return;
+
+      final pos = await geo.Geolocator.getCurrentPosition(
+        desiredAccuracy: geo.LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _userPosition = pos;
+        _showNearbyOnly = true;
       });
-    }
 
-    return filtered;
+      await _flyToLocation(mapbox.Position(pos.longitude, pos.latitude), zoom: 14);
+      await _safeUpdateMarkers();
+    } catch (e) {
+      debugPrint("Error getting location: $e");
+    }
+  }
+
+  // Map initialization
+  Widget _buildMap() {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.4,
+      child: mapbox.MapWidget(
+        textureView: true,
+        styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
+        cameraOptions: mapbox.CameraOptions(
+          center: _branches.isNotEmpty
+              ? mapbox.Point(
+                  coordinates: mapbox.Position(
+                      _branches.first.longitude, _branches.first.latitude))
+              : mapbox.Point(coordinates: mapbox.Position(120.9842, 14.5995)),
+          zoom: 12,
+        ),
+        onMapCreated: (map) async {
+          _mapboxMap = map;
+          try {
+            _pointManager = await map.annotations.createPointAnnotationManager();
+            if (_markerBytes == null) await _loadMarker();
+            Future.delayed(const Duration(milliseconds: 500), _safeUpdateMarkers);
+          } catch (e) {
+            debugPrint("Error setting up Mapbox: $e");
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _safeUpdateMarkers() async {
+    if (_pointManager == null || _markerBytes == null) return;
+    if (!mounted) return;
+
+    try {
+      await _pointManager!.deleteAll();
+      for (final branch in _filteredBranches) {
+        await _pointManager!.create(
+          mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(
+              coordinates: mapbox.Position(branch.longitude, branch.latitude),
+            ),
+            iconImage: "marker",
+            iconSize: 5,
+            textField: branch.name,
+            textSize: 14,
+            textColor: 0xFF0000FF,
+            textOffset: [0, 2.5],
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Marker update failed: $e");
+    }
+  }
+
+  Future<void> _selectBranch(Branch branch) async {
+    FocusScope.of(context).unfocus();
+    setState(() => _showMap = true);
+    await Future.delayed(const Duration(milliseconds: 300));
+    await _flyToLocation(mapbox.Position(branch.longitude, branch.latitude), zoom: 14);
   }
 
   RichText highlightText(String text, String query, {TextStyle? style}) {
     final effectiveStyle = style ?? const TextStyle(color: Colors.black);
     final trimmedQuery = query.trim();
-
-    if (trimmedQuery.isEmpty) {
-      return RichText(text: TextSpan(text: text, style: effectiveStyle));
-    }
+    if (trimmedQuery.isEmpty) return RichText(text: TextSpan(text: text, style: effectiveStyle));
 
     final lowerText = text.toLowerCase();
     final lowerQuery = trimmedQuery.toLowerCase();
@@ -117,116 +212,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
       ));
       start = index + lowerQuery.length;
     }
-
     return RichText(text: TextSpan(children: spans, style: effectiveStyle));
-  }
-
-  Future<void> _flyToBranch(Branch branch) async {
-    if (_mapboxMap == null) return;
-    await _mapboxMap!.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(
-          coordinates: mapbox.Position(branch.longitude, branch.latitude),
-        ),
-        zoom: 14,
-      ),
-      mapbox.MapAnimationOptions(duration: 1000),
-    );
-  }
-
-  Future<void> _flyToUserLocation() async {
-    try {
-      if (!await geo.Geolocator.isLocationServiceEnabled()) return;
-
-      var permission = await geo.Geolocator.checkPermission();
-      if (permission == geo.LocationPermission.denied) {
-        permission = await geo.Geolocator.requestPermission();
-        if (permission == geo.LocationPermission.denied) return;
-      }
-      if (permission == geo.LocationPermission.deniedForever) return;
-
-      final pos = await geo.Geolocator.getCurrentPosition(
-        desiredAccuracy: geo.LocationAccuracy.high,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _userPosition = pos;
-        _showNearbyOnly = true;
-      });
-
-      await _mapboxMap?.flyTo(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-            coordinates: mapbox.Position(pos.longitude, pos.latitude),
-          ),
-          zoom: 14,
-        ),
-        mapbox.MapAnimationOptions(duration: 1000),
-      );
-
-      await _safeUpdateMarkers();
-    } catch (e) {
-      debugPrint("Error getting location: $e");
-    }
-  }
-
-  Future<mapbox.Position?> _geocodeLocation(String query) async {
-    const accessToken = "pk.eyJ1Ijoic2FsYW0xNyIsImEiOiJjbHpxb3lub3IwZnJxMmtxODI5czJscHcyIn0.hPR3kEJ3J-kQ4OiZZL8WFA"; // <-- replace with your token
-    final url = Uri.parse(
-        "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?access_token=$accessToken&limit=1");
-
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['features'] != null && data['features'].isNotEmpty) {
-          final coords = data['features'][0]['center'];
-          return mapbox.Position(coords[0], coords[1]); // [lon, lat]
-        }
-      }
-    } catch (e) {
-      debugPrint("Geocoding failed: $e");
-    }
-    return null;
-  }
-
-  Widget _buildMap() {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.4,
-      child: mapbox.MapWidget(
-        textureView: true,
-        styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
-        cameraOptions: mapbox.CameraOptions(
-          center: _branches.isNotEmpty
-              ? mapbox.Point(
-                  coordinates: mapbox.Position(
-                      _branches.first.longitude, _branches.first.latitude))
-              : mapbox.Point(
-                  coordinates: mapbox.Position(120.9842, 14.5995)),
-          zoom: 12,
-        ),
-        onMapCreated: (map) async {
-          _mapboxMap = map;
-          try {
-            _pointManager = await map.annotations.createPointAnnotationManager();
-            if (_markerBytes == null) {
-              await _loadMarker();
-            }
-            Future.delayed(const Duration(milliseconds: 500), _safeUpdateMarkers);
-          } catch (e) {
-            debugPrint("Error setting up Mapbox: $e");
-          }
-        },
-      ),
-    );
-  }
-
-  Future<void> _selectBranch(Branch branch) async {
-    FocusScope.of(context).unfocus();
-    setState(() => _showMap = true);
-    await Future.delayed(const Duration(milliseconds: 300));
-    await _flyToBranch(branch);
   }
 
   @override
@@ -246,8 +232,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.white, Colors.white, Color.fromARGB(255, 255, 255, 255)],
-            stops: [0.0, 0.85, 1.0],
+            colors: [Colors.white, Colors.white, Colors.white],
           ),
         ),
         child: SafeArea(
@@ -261,18 +246,13 @@ class _BranchMapPageState extends State<BranchMapPage> {
                     const Text(
                       "Find Your Nearest",
                       textAlign: TextAlign.center,
-                      style:
-                          TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     const Text(
                       "PCC SUPP",
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.blue,
-                      ),
+                      style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Colors.blue),
                     ),
                     const SizedBox(height: 4),
                     const Text(
@@ -288,23 +268,22 @@ class _BranchMapPageState extends State<BranchMapPage> {
                     ),
                     const SizedBox(height: 16),
 
+                    // ✅ Single search field
                     sf.SearchField(
                       onChanged: (val) async {
-                        setState(() => _searchQuery = val);
-                        await _safeUpdateMarkers();
+                        final query = val.trim();
+                        setState(() => _searchQuery = query);
 
-                        if (val.isNotEmpty) {
-                          final pos = await _geocodeLocation(val);
-                          if (pos != null && _mapboxMap != null) {
-                            await _mapboxMap!.flyTo(
-                              mapbox.CameraOptions(
-                                center: mapbox.Point(coordinates: pos),
-                                zoom: 12,
-                              ),
-                              mapbox.MapAnimationOptions(duration: 1000),
-                            );
+                        // Map moves independently
+                        if (query.isNotEmpty && _mapboxMap != null) {
+                          final pos = await _geocodeLocation(query);
+                          if (pos != null) {
+                            await _flyToLocation(pos, zoom: 10);
                           }
                         }
+
+                        // Update map markers according to filtered list
+                        await _safeUpdateMarkers();
                       },
                     ),
                     const SizedBox(height: 16),
@@ -329,19 +308,14 @@ class _BranchMapPageState extends State<BranchMapPage> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
                               foregroundColor: Colors.blue,
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 10, horizontal: 20),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4)),
+                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                               elevation: 6,
                               shadowColor: Colors.blue,
                             ),
                             child: const Text(
                               "View All",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue,
-                              ),
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
                             ),
                           ),
                       ],
@@ -377,31 +351,5 @@ class _BranchMapPageState extends State<BranchMapPage> {
         ),
       ),
     );
-  }
-
-  Future<void> _safeUpdateMarkers() async {
-    if (_pointManager == null || _markerBytes == null) return;
-    if (!mounted) return;
-
-    try {
-      await _pointManager!.deleteAll();
-      for (final branch in _filteredBranches) {
-        await _pointManager!.create(
-          mapbox.PointAnnotationOptions(
-            geometry: mapbox.Point(
-              coordinates: mapbox.Position(branch.longitude, branch.latitude),
-            ),
-            iconImage: "marker",
-            iconSize: 5,
-            textField: branch.name,
-            textSize: 14,
-            textColor: 0xFF0000FF,
-            textOffset: [0, 2.5],
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint("Marker update failed: $e");
-    }
   }
 }

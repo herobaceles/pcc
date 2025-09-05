@@ -66,7 +66,6 @@ class BranchList extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Close Button
                 Align(
                   alignment: Alignment.topRight,
                   child: IconButton(
@@ -74,8 +73,6 @@ class BranchList extends StatelessWidget {
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
-
-                // Map Preview
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 12),
@@ -109,8 +106,6 @@ class BranchList extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-
-                // Branch Details
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
@@ -243,7 +238,6 @@ class BranchList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🔹 Header showing total branches
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Text(
@@ -255,8 +249,6 @@ class BranchList extends StatelessWidget {
               ),
             ),
           ),
-
-          // 🔹 Branch List
           Expanded(
             child: ListView.builder(
               itemCount: branches.length,
@@ -324,4 +316,3 @@ class BranchList extends StatelessWidget {
     );
   }
 }
-

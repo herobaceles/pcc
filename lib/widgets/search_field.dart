@@ -2,36 +2,34 @@ import 'package:flutter/material.dart';
 
 class SearchField extends StatelessWidget {
   final ValueChanged<String> onChanged;
-  final VoidCallback? onSearch;
+  final String hintText;
 
-  const SearchField({super.key, required this.onChanged, this.onSearch});
+  const SearchField({
+    super.key,
+    required this.onChanged,
+    this.hintText = "Search branch...",
+  });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       onChanged: onChanged,
       decoration: InputDecoration(
-        hintText: "Search Branches",
-        filled: true,
-        fillColor: const Color(0xFFFFFFFF), // light gray background for modern look
-        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-        prefixIcon: const Icon(Icons.search, color: Colors.grey),
-        suffixIcon: GestureDetector(
-          onTap: onSearch,
-          child: Container(
-            margin: const EdgeInsets.all(6), // spacing inside circle
-            decoration: const BoxDecoration(
-              color: Colors.blue,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.search, color: Colors.white),
-          ),
-        ),
+        hintText: hintText,
+        prefixIcon: const Icon(Icons.search, color: Colors.blue),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(30), // rounded for modern style
-          borderSide: BorderSide.none, // remove border
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: Colors.blue.withOpacity(0.5)),
         ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: Colors.blue, width: 2),
+        ),
+        filled: true,
+        fillColor: Colors.white,
       ),
+      style: const TextStyle(fontSize: 16),
     );
   }
 }
