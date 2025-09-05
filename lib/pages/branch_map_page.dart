@@ -1,14 +1,16 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:geolocator/geolocator.dart' as geo;
+import 'package:http/http.dart' as http;
 
 import '../models/branch.dart';
 import '../services/branch_service.dart';
-import '../widgets/search_field.dart' as sf; // added prefix
+import '../widgets/search_field.dart' as sf;
 import '../widgets/action_buttons.dart';
 import '../widgets/toggle_chips.dart';
-import '../widgets/branch_list.dart' as bl; // added prefix
+import '../widgets/branch_list.dart' as bl;
 
 class BranchMapPage extends StatefulWidget {
   const BranchMapPage({super.key});
@@ -163,31 +165,30 @@ class _BranchMapPageState extends State<BranchMapPage> {
         mapbox.MapAnimationOptions(duration: 1000),
       );
 
-      await _updateMarkers();
+      await _safeUpdateMarkers();
     } catch (e) {
       debugPrint("Error getting location: $e");
     }
   }
 
-  Future<void> _updateMarkers() async {
-    if (_pointManager == null || _markerBytes == null) return;
-    await _pointManager!.deleteAll();
+  Future<mapbox.Position?> _geocodeLocation(String query) async {
+    const accessToken = "pk.eyJ1Ijoic2FsYW0xNyIsImEiOiJjbHpxb3lub3IwZnJxMmtxODI5czJscHcyIn0.hPR3kEJ3J-kQ4OiZZL8WFA"; // <-- replace with your token
+    final url = Uri.parse(
+        "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?access_token=$accessToken&limit=1");
 
-    for (final branch in _filteredBranches) {
-      await _pointManager!.create(
-        mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(
-            coordinates: mapbox.Position(branch.longitude, branch.latitude),
-          ),
-          iconImage: "marker",
-          iconSize: 5,
-          textField: branch.name,
-          textSize: 14,
-          textColor: 0xFF0000FF,
-          textOffset: [0, 2.5],
-        ),
-      );
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['features'] != null && data['features'].isNotEmpty) {
+          final coords = data['features'][0]['center'];
+          return mapbox.Position(coords[0], coords[1]); // [lon, lat]
+        }
+      }
+    } catch (e) {
+      debugPrint("Geocoding failed: $e");
     }
+    return null;
   }
 
   Widget _buildMap() {
@@ -212,7 +213,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
             if (_markerBytes == null) {
               await _loadMarker();
             }
-            Future.delayed(const Duration(milliseconds: 500), _updateMarkers);
+            Future.delayed(const Duration(milliseconds: 500), _safeUpdateMarkers);
           } catch (e) {
             debugPrint("Error setting up Mapbox: $e");
           }
@@ -287,6 +288,25 @@ class _BranchMapPageState extends State<BranchMapPage> {
                     ),
                     const SizedBox(height: 16),
 
+                    sf.SearchField(
+                      onChanged: (val) async {
+                        setState(() => _searchQuery = val);
+                        await _safeUpdateMarkers();
+
+                        if (val.isNotEmpty) {
+                          final pos = await _geocodeLocation(val);
+                          if (pos != null && _mapboxMap != null) {
+                            await _mapboxMap!.flyTo(
+                              mapbox.CameraOptions(
+                                center: mapbox.Point(coordinates: pos),
+                                zoom: 12,
+                              ),
+                              mapbox.MapAnimationOptions(duration: 1000),
+                            );
+                          }
+                        }
+                      },
+                    ),
                     const SizedBox(height: 16),
 
                     Row(
