@@ -44,35 +44,33 @@ class ToggleChips extends StatelessWidget {
         height: 50,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? Colors.blue : const Color(0xFFFFFFFF),
+          color: selected ? Colors.blue : Colors.white,
           borderRadius: BorderRadius.circular(8),
+          border: selected ? Border.all(color: Colors.blue) : null,
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: Colors.blue.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
         ),
-        child: AnimatedScale(
-          scale: selected ? 1.05 : 1.0, // Slightly enlarge when selected
-          duration: const Duration(milliseconds: 250),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: Icon(
-                  icon,
-                  key: ValueKey(selected), // Rebuild to animate color
-                  color: selected ? Colors.white : Colors.black,
-                ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: selected ? Colors.white : Colors.black),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
-              const SizedBox(width: 8),
-              AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 250),
-                style: TextStyle(
-                  color: selected ? Colors.white : Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-                child: Text(label),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
