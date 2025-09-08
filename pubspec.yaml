@@ -2,7 +2,7 @@ name: pccmobile
 description: A new Flutter project.
 
 # Prevent accidental publishing
-publish_to: 'none'
+publish_to: "none"
 
 # App versioning
 version: 1.0.0+1
@@ -20,13 +20,17 @@ dependencies:
   # Cupertino Icons for iOS-style icons
   cupertino_icons: ^1.0.8
 
-  # Location services
+  # Location services (works on Pixel 8 emulator)
   geolocator: ^10.1.0
 
-  # URL launcher (only this is needed)
+  # URL launcher (for opening links, dialing, etc.)
   url_launcher: ^6.3.2
-  huawei_location: ^6.11.0+300
-  http: ^1.1.0   # <-- Add this line
+
+  # HTTP client for API requests
+  http: ^1.1.0
+
+  # NOTE: Huawei Location removed (only works on Huawei devices)
+  # huawei_location: ^6.11.0+300
 
 dev_dependencies:
   flutter_test:
@@ -40,3 +44,4 @@ flutter:
   assets:
     - assets/branches.json
     - assets/marker.png
+    - assets/PCCSUS.png
