@@ -6,6 +6,8 @@ class Branch {
   final double longitude;
   final String contact;
   final String email;
+  final List<String> services;
+
 
   Branch({
     required this.id,
@@ -15,6 +17,7 @@ class Branch {
     required this.longitude,
     required this.contact,
     required this.email,
+    this.services = const [],
   });
 
   factory Branch.fromJson(Map<String, dynamic> json) {

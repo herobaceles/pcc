@@ -27,7 +27,7 @@ class SearchField extends StatelessWidget {
             onSubmitted: onSubmitted,
             decoration: InputDecoration(
               hintText: hintText,
-              prefixIcon: const Icon(Icons.search, color: Colors.blue),
+              prefixIcon: const Icon(Icons.search, color: Color(0xFF0255C2)),
               contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
               border: InputBorder.none, // removes the border
               filled: true,
@@ -40,7 +40,7 @@ class SearchField extends StatelessWidget {
         Container(
           height: 48,
           decoration: BoxDecoration(
-            color: Colors.blue,
+            color: Color(0xFF0255C2),
             borderRadius: BorderRadius.circular(8),
           ),
           child: IconButton(

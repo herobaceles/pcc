@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'pages/branch_map_page.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
+import 'config.dart'; // ✅ Use centralized config
 
-const String mapboxAccessToken = "pk.eyJ1Ijoic2FsYW0xNyIsImEiOiJjbHpxb3lub3IwZnJxMmtxODI5czJscHcyIn0.hPR3kEJ3J-kQ4OiZZL8WFA";
-
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await loadConfig(); // ✅ Loads .env and assigns global mapboxAccessToken
+
   mapbox.MapboxOptions.setAccessToken(mapboxAccessToken);
+
   runApp(const MyApp());
 }
 

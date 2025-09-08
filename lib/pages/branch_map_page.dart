@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:http/http.dart' as http;
+import 'package:pccmobile/config.dart';
 
 import '../models/branch.dart';
 import '../services/branch_service.dart';
@@ -181,10 +182,9 @@ class _BranchMapPageState extends State<BranchMapPage> {
   }
 
   Future<mapbox.Position?> _geocodeLocation(String query) async {
-    const accessToken =
-        "pk.eyJ1Ijoic2FsYW0xNyIsImEiOiJjbHpxb3lub3IwZnJxMmtxODI5czJscHcyIn0.hPR3kEJ3J-kQ4OiZZL8WFA";
     final url = Uri.parse(
-        "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?access_token=$accessToken&limit=1&country=PH");
+      "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?access_token=$mapboxAccessToken&limit=1&country=PH",
+    );
 
     try {
       final response = await http.get(url);
@@ -267,10 +267,18 @@ class _BranchMapPageState extends State<BranchMapPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("PCC SUS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
-        backgroundColor: Colors.transparent,
-        foregroundColor: Color(0xFF1E7DF2),
+        backgroundColor: Colors.white,
         elevation: 0,
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/PCCSUS.png',
+              height: 40,
+            ),
+            const SizedBox(width: 8),
+            const Text("PCC SUPP", style: TextStyle(color: Color(0xFF0255C2), fontWeight: FontWeight.bold)),
+          ],
+        ),
       ),
       body: SafeArea(
         child: Column(
@@ -282,7 +290,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
                 children: [
                   const Text("Find Your Nearest", textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  const Text("PCC SUPP", textAlign: TextAlign.center, style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Color(0xFF1E7DF2))),
+                  const Text("PCC SUPP", textAlign: TextAlign.center, style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Color(0xFF0255C2))),
                   const SizedBox(height: 4),
                   const Text(
                     "Bringing quality healthcare closer to you...",
@@ -353,24 +361,44 @@ class _BranchMapPageState extends State<BranchMapPage> {
             Expanded(
               child: Stack(
                 children: [
+            
                   Offstage(
                     offstage: !_showMap,
-                    child: mapbox.MapWidget(
-                      key: const ValueKey("mapbox"),
-                      textureView: true,
-                      styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
-                      cameraOptions: mapbox.CameraOptions(
-                        center: _branches.isNotEmpty
-                            ? mapbox.Point(coordinates: mapbox.Position(_branches.first.longitude, _branches.first.latitude))
-                            : mapbox.Point(coordinates: mapbox.Position(120.9842, 14.5995)),
-                        zoom: 12,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: mapbox.MapWidget(
+                            key: const ValueKey("mapbox"),
+                            textureView: true,
+                            styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
+                            cameraOptions: mapbox.CameraOptions(
+                              center: _branches.isNotEmpty
+                                  ? mapbox.Point(coordinates: mapbox.Position(_branches.first.longitude, _branches.first.latitude))
+                                  : mapbox.Point(coordinates: mapbox.Position(120.9842, 14.5995)),
+                              zoom: 12,
+                            ),
+                            onMapCreated: (map) async {
+                              _mapboxMap = map;
+                              _pointManager ??= await map.annotations.createPointAnnotationManager();
+                              if (_markerBytes == null) await _loadMarker();
+                              Future.delayed(const Duration(milliseconds: 500), _safeUpdateMarkers);
+                            },
+                          ),
+                        ),
                       ),
-                      onMapCreated: (map) async {
-                        _mapboxMap = map;
-                        _pointManager ??= await map.annotations.createPointAnnotationManager();
-                        if (_markerBytes == null) await _loadMarker();
-                        Future.delayed(const Duration(milliseconds: 500), _safeUpdateMarkers);
-                      },
                     ),
                   ),
                   Offstage(

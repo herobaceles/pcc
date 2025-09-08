@@ -13,7 +13,7 @@ class ActionButtons extends StatelessWidget {
         icon: const Icon(Icons.near_me),
         label: const Text("Near Me"),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Color(0xFF1E7DF2),
+          backgroundColor: Color.fromRGBO(2, 85, 194, 1),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

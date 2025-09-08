@@ -20,31 +20,28 @@ class BranchList extends StatelessWidget {
     required this.highlightTextBuilder,
   });
 
-void _launchNavigation(Branch branch) async {
-  final lat = branch.latitude.toStringAsFixed(6);
-  final lng = branch.longitude.toStringAsFixed(6);
+  void _launchNavigation(Branch branch) async {
+    final lat = branch.latitude.toStringAsFixed(6);
+    final lng = branch.longitude.toStringAsFixed(6);
 
-  // Android app URL
-  final geoUrl = 'geo:$lat,$lng?q=$lat,$lng(${Uri.encodeComponent(branch.name)})';
-  // iOS app URL
-  final iosUrl = 'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving';
-  // Fallback web URL
-  final webUrl = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
+    final geoUrl = 'geo:$lat,$lng?q=$lat,$lng(${Uri.encodeComponent(branch.name)})';
+    final iosUrl = 'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving';
+    final webUrl = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
 
-  try {
-    if (await canLaunchUrlString(geoUrl)) {
-      await launchUrlString(geoUrl, mode: LaunchMode.externalApplication);
-    } else if (await canLaunchUrlString(iosUrl)) {
-      await launchUrlString(iosUrl, mode: LaunchMode.externalApplication);
-    } else if (await canLaunchUrlString(webUrl)) {
-      await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint("Could not launch Google Maps.");
+    try {
+      if (await canLaunchUrlString(geoUrl)) {
+        await launchUrlString(geoUrl, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrlString(iosUrl)) {
+        await launchUrlString(iosUrl, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrlString(webUrl)) {
+        await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+      } else {
+        debugPrint("Could not launch Google Maps.");
+      }
+    } catch (e) {
+      debugPrint("Error launching navigation: $e");
     }
-  } catch (e) {
-    debugPrint("Error launching navigation: $e");
   }
-}
 
   void _showBranchDialog(BuildContext context, Branch branch) {
     FocusScope.of(context).unfocus();
@@ -61,128 +58,248 @@ void _launchNavigation(Branch branch) async {
     }
 
     mapbox.PointAnnotationManager? pointManager;
+    final TextEditingController searchController = TextEditingController();
+
+    void _showServiceResults(List<String> results) {
+      showDialog(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SizedBox(
+              height: 400,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'Search Results',
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Expanded(
+                    child: results.isEmpty
+                        ? const SizedBox.shrink()
+                        : ListView.builder(
+                            itemCount: results.length,
+                            itemBuilder: (context, index) {
+                              return ListTile(
+                                leading: const Icon(Icons.check_circle, color: Colors.green),
+                                title: Text(results[index]),
+                              );
+                            },
+                          ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("Close"),
+                  )
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
 
     showDialog(
       context: context,
       barrierColor: Colors.black.withAlpha((0.5 * 255).toInt()),
       builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: SizedBox(
-            height: 450,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Align(
-                  alignment: Alignment.topRight,
-                  child: IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.withAlpha((0.3*255).toInt()), width: 1),
-                    ),
-                    clipBehavior: Clip.hardEdge,
-                    child: mapbox.MapWidget(
-                      styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
-                      cameraOptions: mapbox.CameraOptions(
-                        center: mapbox.Point(
-                          coordinates: mapbox.Position(branch.longitude, branch.latitude),
-                        ),
-                        zoom: 14,
-                      ),
-                      onMapCreated: (map) async {
-                        pointManager = await map.annotations.createPointAnnotationManager();
-                        await pointManager!.create(
-                          mapbox.PointAnnotationOptions(
-                            geometry: mapbox.Point(
-                              coordinates: mapbox.Position(branch.longitude, branch.latitude),
-                            ),
-                            iconImage: "marker",
-                            iconSize: 5,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      highlightTextBuilder(
-                        branch.name,
-                        searchQuery,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SizedBox(
+                height: 500,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Top row: Close button + search bar + search button
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
                         children: [
-                          const Icon(Icons.location_on, color: Colors.red, size: 18),
-                          const SizedBox(width: 4),
+                          // Close button
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.grey),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                          
+                          const SizedBox(width: 8),
+
+                          // Search bar
                           Expanded(
-                            child: highlightTextBuilder(
-                              branch.address,
-                              searchQuery,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Colors.black54,
+                            flex: 3, // width relative to buttons
+                            child: TextField(
+                              controller: searchController,
+                              onSubmitted: (query) {
+                                final results = branch.services
+                                    .where((s) =>
+                                        s.toLowerCase().contains(query.toLowerCase()))
+                                    .toList();
+                                _showServiceResults(results);
+                              },
+                              decoration: InputDecoration(
+                                hintText: "Search services...",
+                                filled: true,
+                                fillColor: Colors.grey[200],
+                                contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide.none,
+                                ),
                               ),
                             ),
                           ),
+
+                          const SizedBox(width: 8),
+
+                          // Search button
+                          ElevatedButton(
+                            onPressed: () {
+                              final results = branch.services
+                                  .where((s) => s
+                                      .toLowerCase()
+                                      .contains(searchController.text.toLowerCase()))
+                                  .toList();
+                              _showServiceResults(results);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0255C2),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Icon(Icons.search, color: Colors.white),
+                          ),
                         ],
                       ),
-                      if (distance != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '${distance.toStringAsFixed(2)} km away',
-                            style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Map
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.blue.withAlpha((0.3 * 255).toInt()),
+                            width: 1,
                           ),
                         ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(Icons.phone, color: Color(0xFF1E7DF2)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              branch.contact,
-                              style: const TextStyle(fontSize: 14, color: Color(0xFF1E7DF2)),
+                        clipBehavior: Clip.hardEdge,
+                        child: mapbox.MapWidget(
+                          styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
+                          cameraOptions: mapbox.CameraOptions(
+                            center: mapbox.Point(
+                              coordinates: mapbox.Position(
+                                  branch.longitude, branch.latitude),
                             ),
+                            zoom: 14,
+                          ),
+                          onMapCreated: (map) async {
+                            pointManager =
+                                await map.annotations.createPointAnnotationManager();
+                            await pointManager!.create(
+                              mapbox.PointAnnotationOptions(
+                                geometry: mapbox.Point(
+                                  coordinates: mapbox.Position(
+                                      branch.longitude, branch.latitude),
+                                ),
+                                iconImage: "marker",
+                                iconSize: 5,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+
+                    // Branch info
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          highlightTextBuilder(
+                            branch.name,
+                            searchQuery,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(Icons.location_on, color: Colors.red, size: 18),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: highlightTextBuilder(
+                                  branch.address,
+                                  searchQuery,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (distance != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                '${distance.toStringAsFixed(2)} km away',
+                                style: const TextStyle(fontSize: 14, color: Colors.grey),
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(Icons.phone, color: Color(0xFF0255C2)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  branch.contact,
+                                  style: const TextStyle(fontSize: 14, color: Color(0xFF0255C2)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(Icons.email, color: Color(0xFF0255C2)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  branch.email,
+                                  style: const TextStyle(fontSize: 14, color: Color(0xFF0255C2)),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.email, color: Color(0xFF1E7DF2)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              branch.email,
-                              style: const TextStyle(fontSize: 14, color: Colors.blue),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
+                    ),
+
+                    // Buttons
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
@@ -193,7 +310,7 @@ void _launchNavigation(Branch branch) async {
                               icon: const Icon(Icons.map),
                               label: const Text("View on Map"),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Color(0xFF1E7DF2),
+                                backgroundColor: Color(0xFF0255C2),
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
@@ -220,13 +337,12 @@ void _launchNavigation(Branch branch) async {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -305,7 +421,7 @@ void _launchNavigation(Branch branch) async {
                         child: ElevatedButton(
                           onPressed: () => _showBranchDialog(context, branch),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Color(0xFF1E7DF2),
+                            backgroundColor: Color(0xFF0255C2),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(

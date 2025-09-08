@@ -1,10 +1,9 @@
 name: pccmobile
 description: A new Flutter project.
 
-# Prevent accidental publishing
 publish_to: 'none'
 
-# App versioning
+
 version: 1.0.0+1
 
 environment:
@@ -14,19 +13,16 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Mapbox for maps integration
   mapbox_maps_flutter: ^2.1.0
-
-  # Cupertino Icons for iOS-style icons
+  flutter_dotenv: ^6.0.0
+ 
   cupertino_icons: ^1.0.8
 
-  # Location services
   geolocator: ^10.1.0
 
-  # URL launcher (only this is needed)
   url_launcher: ^6.3.2
   huawei_location: ^6.11.0+300
-  http: ^1.1.0   # <-- Add this line
+  http: ^1.1.0
 
 dev_dependencies:
   flutter_test:
@@ -40,3 +36,5 @@ flutter:
   assets:
     - assets/branches.json
     - assets/marker.png
+    - .env
+    - assets/PCCSUS.png
