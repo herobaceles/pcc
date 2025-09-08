@@ -158,12 +158,12 @@ void _launchNavigation(Branch branch) async {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.phone, color: Colors.blue),
+                          const Icon(Icons.phone, color: Color(0xFF1E7DF2)),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               branch.contact,
-                              style: const TextStyle(fontSize: 14, color: Colors.blue),
+                              style: const TextStyle(fontSize: 14, color: Color(0xFF1E7DF2)),
                             ),
                           ),
                         ],
@@ -171,7 +171,7 @@ void _launchNavigation(Branch branch) async {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.email, color: Colors.blue),
+                          const Icon(Icons.email, color: Color(0xFF1E7DF2)),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -193,7 +193,7 @@ void _launchNavigation(Branch branch) async {
                               icon: const Icon(Icons.map),
                               label: const Text("View on Map"),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
+                                backgroundColor: Color(0xFF1E7DF2),
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
@@ -305,7 +305,7 @@ void _launchNavigation(Branch branch) async {
                         child: ElevatedButton(
                           onPressed: () => _showBranchDialog(context, branch),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
+                            backgroundColor: Color(0xFF1E7DF2),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -74,7 +73,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
           b.latitude,
           b.longitude,
         );
-        return distance <= 10000; // 10km radius
+        return distance <= 10000;
       }).toList();
 
       filtered.sort((a, b) {
@@ -141,46 +140,45 @@ class _BranchMapPageState extends State<BranchMapPage> {
   }
 
   Future<void> _flyToUserLocation() async {
-  try {
-    setState(() => _isSearching = true); // start loading
+    try {
+      setState(() => _isSearching = true);
 
-    if (!await geo.Geolocator.isLocationServiceEnabled()) {
-      setState(() => _isSearching = false);
-      return;
-    }
-
-    var permission = await geo.Geolocator.checkPermission();
-    if (permission == geo.LocationPermission.denied) {
-      permission = await geo.Geolocator.requestPermission();
-      if (permission == geo.LocationPermission.denied) {
+      if (!await geo.Geolocator.isLocationServiceEnabled()) {
         setState(() => _isSearching = false);
         return;
       }
-    }
-    if (permission == geo.LocationPermission.deniedForever) {
+
+      var permission = await geo.Geolocator.checkPermission();
+      if (permission == geo.LocationPermission.denied) {
+        permission = await geo.Geolocator.requestPermission();
+        if (permission == geo.LocationPermission.denied) {
+          setState(() => _isSearching = false);
+          return;
+        }
+      }
+      if (permission == geo.LocationPermission.deniedForever) {
+        setState(() => _isSearching = false);
+        return;
+      }
+
+      final pos = await geo.Geolocator.getCurrentPosition(
+        desiredAccuracy: geo.LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _userPosition = pos;
+        _showNearbyOnly = true;
+      });
+
+      await _flyToLocation(mapbox.Position(pos.longitude, pos.latitude), zoom: 14);
+      await _safeUpdateMarkers();
+    } catch (e) {
+      debugPrint("Error getting location: $e");
+    } finally {
       setState(() => _isSearching = false);
-      return;
     }
-
-    final pos = await geo.Geolocator.getCurrentPosition(
-      desiredAccuracy: geo.LocationAccuracy.high,
-    );
-
-    if (!mounted) return;
-    setState(() {
-      _userPosition = pos;
-      _showNearbyOnly = true;
-    });
-
-    await _flyToLocation(mapbox.Position(pos.longitude, pos.latitude), zoom: 14);
-    await _safeUpdateMarkers();
-  } catch (e) {
-    debugPrint("Error getting location: $e");
-  } finally {
-    setState(() => _isSearching = false); // stop loading
   }
-}
-
 
   Future<mapbox.Position?> _geocodeLocation(String query) async {
     const accessToken =
@@ -230,7 +228,6 @@ class _BranchMapPageState extends State<BranchMapPage> {
         );
       }
 
-      // Zoom out to show all filtered branches
       if (_mapboxMap != null && _filteredBranches.isNotEmpty) {
         double minLat = _filteredBranches.first.latitude;
         double maxLat = _filteredBranches.first.latitude;
@@ -244,11 +241,9 @@ class _BranchMapPageState extends State<BranchMapPage> {
           if (b.longitude > maxLng) maxLng = b.longitude;
         }
 
-        // Center coordinates
         final centerLat = (minLat + maxLat) / 2;
         final centerLng = (minLng + maxLng) / 2;
 
-        // Estimate zoom level based on distance (simplified)
         final latDiff = maxLat - minLat;
         final lngDiff = maxLng - minLng;
         double zoom = 12 - (latDiff + lngDiff) * 10;
@@ -274,13 +269,12 @@ class _BranchMapPageState extends State<BranchMapPage> {
       appBar: AppBar(
         title: const Text("PCC SUS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.blue,
+        foregroundColor: Color(0xFF1E7DF2),
         elevation: 0,
       ),
       body: SafeArea(
         child: Column(
           children: [
-            // Header & Search
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -288,7 +282,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
                 children: [
                   const Text("Find Your Nearest", textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  const Text("PCC SUPP", textAlign: TextAlign.center, style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Colors.blue)),
+                  const Text("PCC SUPP", textAlign: TextAlign.center, style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Color(0xFF1E7DF2))),
                   const SizedBox(height: 4),
                   const Text(
                     "Bringing quality healthcare closer to you...",
@@ -296,30 +290,24 @@ class _BranchMapPageState extends State<BranchMapPage> {
                     style: TextStyle(fontSize: 16, color: Color(0xFF242323), fontWeight: FontWeight.w600, fontStyle: FontStyle.italic, height: 1.4),
                   ),
                   const SizedBox(height: 16),
-
                   sf.SearchField(
-  onChanged: (val) {
-    // Update search query immediately to filter list
-    setState(() => _searchQuery = val.trim());
-  },
-  onSubmitted: (val) async {
-    final query = val.trim();
-    if (query.isEmpty || query == _lastMapSearchQuery || _mapboxMap == null) return;
-
-    setState(() => _isSearching = true); // show loading
-
-    final pos = await _geocodeLocation(query);
-    if (pos != null) {
-      await _flyToLocation(pos);
-      _lastMapSearchQuery = query;
-    }
-    await _safeUpdateMarkers();
-    setState(() => _isSearching = false); // hide loading
-  },
-),
-
+                    onChanged: (val) {
+                      setState(() => _searchQuery = val.trim());
+                    },
+                    onSubmitted: (val) async {
+                      final query = val.trim();
+                      if (query.isEmpty || query == _lastMapSearchQuery || _mapboxMap == null) return;
+                      setState(() => _isSearching = true);
+                      final pos = await _geocodeLocation(query);
+                      if (pos != null) {
+                        await _flyToLocation(pos);
+                        _lastMapSearchQuery = query;
+                      }
+                      await _safeUpdateMarkers();
+                      setState(() => _isSearching = false);
+                    },
+                  ),
                   const SizedBox(height: 16),
-
                   Row(
                     children: [
                       Expanded(
@@ -339,18 +327,17 @@ class _BranchMapPageState extends State<BranchMapPage> {
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
-                            foregroundColor: Colors.blue,
+                            foregroundColor: Color(0xFF1E7DF2),
                             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                             elevation: 6,
-                            shadowColor: Colors.blue,
+                            shadowColor: Color(0xFF1E7DF2),
                           ),
-                          child: const Text("View All", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                          child: const Text("View All", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E7DF2))),
                         ),
                     ],
                   ),
                   const SizedBox(height: 16),
-
                   ToggleChips(
                     showMap: _showMap,
                     onToggle: (val) {
@@ -363,8 +350,6 @@ class _BranchMapPageState extends State<BranchMapPage> {
                 ],
               ),
             ),
-
-            // Map & List
             Expanded(
               child: Stack(
                 children: [
@@ -388,7 +373,6 @@ class _BranchMapPageState extends State<BranchMapPage> {
                       },
                     ),
                   ),
-
                   Offstage(
                     offstage: _showMap,
                     child: bl.BranchList(
@@ -399,7 +383,6 @@ class _BranchMapPageState extends State<BranchMapPage> {
                       highlightTextBuilder: highlightText,
                     ),
                   ),
-
                   if (_isSearching)
                     Container(
                       color: Colors.black26,

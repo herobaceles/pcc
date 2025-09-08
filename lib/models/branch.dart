@@ -17,13 +17,15 @@ class Branch {
     required this.email,
   });
 
-  factory Branch.fromJson(Map<String, dynamic> json) => Branch(
-        id: json['id'],
-        name: json['name'],
-        address: json['address'],
-        latitude: (json['latitude'] as num).toDouble(),
-        longitude: (json['longitude'] as num).toDouble(),
-        contact: json['contact'],
-        email: json['email'],
-      );
+  factory Branch.fromJson(Map<String, dynamic> json) {
+    return Branch(
+      id: json['id'],
+      name: json['name'],
+      address: json['address'],
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+      contact: json['contact'],
+      email: json['email'],
+    );
+  }
 }

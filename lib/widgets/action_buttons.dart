@@ -8,12 +8,12 @@ class ActionButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: double.infinity, // Make the button full width
+      width: double.infinity, 
       child: ElevatedButton.icon(
         icon: const Icon(Icons.near_me),
         label: const Text("Near Me"),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue,
+          backgroundColor: Color(0xFF1E7DF2),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

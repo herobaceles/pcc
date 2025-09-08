@@ -46,11 +46,11 @@ class ToggleChips extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? Colors.blue : Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: selected ? Border.all(color: Colors.blue) : null,
+          border: selected ? Border.all(color: Color(0xFF1E7DF2)) : null,
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: Colors.blue.withOpacity(0.3),
+                    color: Color(0xFF1E7DF2).withOpacity(0.3),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   )
