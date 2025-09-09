@@ -14,6 +14,9 @@ dependencies:
   flutter:
     sdk: flutter
 
+  firebase_core: ^3.8.0   # check latest version
+  cloud_firestore: ^5.4.0 # if you’re using Firestore
+  firebase_auth: ^5.2.0   # if you’re using Authentication
   # Mapbox for maps integration
   mapbox_maps_flutter: ^2.1.0
 
@@ -45,7 +48,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/branches.json
+    # - assets/branches.json
     - assets/marker.png
     - assets/PCCSUS.png
     - .env

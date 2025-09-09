@@ -12,7 +12,7 @@ class SearchField extends StatelessWidget {
     required this.onChanged,
     this.onSubmitted,
     this.onSearchPressed,
-    this.hintText = "Search branch...",
+    this.hintText = "Enter your location",
     this.controller,
   });
 
@@ -29,7 +29,7 @@ class SearchField extends StatelessWidget {
               hintText: hintText,
               prefixIcon: const Icon(Icons.search, color: Color(0xFF0255C2)),
               contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              border: InputBorder.none, // removes the border
+              border: InputBorder.none, 
               filled: true,
               fillColor: Colors.white,
             ),

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "583119131925",
+    "project_id": "pcclocator",
+    "storage_bucket": "pcclocator.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:583119131925:android:43770d518513fce21f851c",
+        "android_client_info": {
+          "package_name": "com.example.pccmobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGsHbbwv_nLbwMyOgYNm03cMQEzrI6pdA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
