@@ -14,25 +14,28 @@ dependencies:
   flutter:
     sdk: flutter
 
-  firebase_core: ^3.8.0   # check latest version
-  cloud_firestore: ^5.4.0 # if you’re using Firestore
-  firebase_auth: ^5.2.0   # if you’re using Authentication
-  # Mapbox for maps integration
-  mapbox_maps_flutter: ^2.1.0
+  # Firebase
+  firebase_core: ^3.8.0   # check latest
+  cloud_firestore: ^5.4.0 # Firestore (if needed)
+  firebase_auth: ^5.2.0   # Authentication (if needed)
 
-  # Cupertino Icons for iOS-style icons
+  # ✅ Use the new Mapbox SDK only
+  mapbox_maps_flutter: ^2.1.0
+  mapbox_search: ^4.3.2   # optional: search/autocomplete
+
+  # Cupertino Icons
   cupertino_icons: ^1.0.8
 
-  # Location services (works on Pixel 8 emulator)
+  # Location services
   geolocator: ^10.1.0
 
-  # URL launcher (for opening links, dialing, etc.)
+  # URL launcher
   url_launcher: ^6.3.2
 
-  # HTTP client for API requests
+  # HTTP client
   http: ^1.1.0
 
-  # Huawei Location (optional, only for Huawei devices)
+  # Huawei Location (optional, only if needed for Huawei devices)
   huawei_location: ^6.11.0+300
 
   # Environment variables
@@ -48,7 +51,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    # - assets/branches.json
     - assets/marker.png
     - assets/PCCSUS.png
     - .env

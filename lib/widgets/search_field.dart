@@ -20,6 +20,7 @@ class SearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
+        // Text input field
         Expanded(
           child: TextField(
             controller: controller,
@@ -27,9 +28,9 @@ class SearchField extends StatelessWidget {
             onSubmitted: onSubmitted,
             decoration: InputDecoration(
               hintText: hintText,
-              prefixIcon: const Icon(Icons.search, color: Color(0xFF0255C2)),
-              contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              border: InputBorder.none, 
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              border: InputBorder.none,
               filled: true,
               fillColor: Colors.white,
             ),
@@ -37,10 +38,12 @@ class SearchField extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
+
+        // External search button
         Container(
           height: 48,
           decoration: BoxDecoration(
-            color: Color(0xFF0255C2),
+            color: const Color(0xFF0255C2),
             borderRadius: BorderRadius.circular(8),
           ),
           child: IconButton(

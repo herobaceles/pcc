@@ -18,35 +18,37 @@ class SearchWithToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Toggle buttons on the left
-        ToggleChips(
-          showMap: showMap,
-          onToggle: onToggle,
-        ),
-        const SizedBox(width: 12),
-
-        // Search bar takes the remaining space
-        Expanded(
-          child: SizedBox(
-            height: 40, // match toggle button height
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              onSubmitted: (_) => onSubmitted?.call(),
-              decoration: InputDecoration(
-                hintText: "Search branches",
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Colors.grey),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                suffixIcon: const Icon(Icons.search),
+        // Search bar full width
+        SizedBox(
+          height: 44,
+          child: TextField(
+            controller: controller,
+            onChanged: onChanged,
+            onSubmitted: (_) => onSubmitted?.call(),
+            decoration: InputDecoration(
+              hintText: "Search branches",
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Colors.grey),
               ),
+              filled: true,
+              fillColor: Colors.white,
+              suffixIcon: const Icon(Icons.search),
             ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Toggle buttons below search
+        Center(
+          child: ToggleChips(
+            showMap: showMap,
+            onToggle: onToggle,
           ),
         ),
       ],
@@ -65,14 +67,16 @@ class ToggleChips extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildIconButton(
+        _buildButton(
           icon: Icons.list,
+          label: "List",
           selected: !showMap,
           onTap: () => onToggle(false),
         ),
-        const SizedBox(width: 8),
-        _buildIconButton(
+        const SizedBox(width: 16),
+        _buildButton(
           icon: Icons.map,
+          label: "Map",
           selected: showMap,
           onTap: () => onToggle(true),
         ),
@@ -80,32 +84,34 @@ class ToggleChips extends StatelessWidget {
     );
   }
 
-  Widget _buildIconButton({
+  Widget _buildButton({
     required IconData icon,
+    required String label,
     required bool selected,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        height: 40, // same as search bar
-        width: 40,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF0255C2) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: selected ? Border.all(color: const Color(0xFF0255C2)) : null,
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF0255C2).withOpacity(0.3),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  )
-                ]
-              : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: selected ? const Color(0xFF0255C2) : Colors.black87,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: selected ? const Color(0xFF0255C2) : Colors.black87,
+              ),
+            ),
+          ],
         ),
-        child: Icon(icon, size: 20, color: selected ? Colors.white : Colors.black),
       ),
     );
   }

@@ -1,19 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'pages/branch_map_page.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
-import 'config.dart'; // ✅ Use centralized config
+import 'config.dart';
+import 'pages/splash_screen.dart'; // ✅ import splash
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
   await Firebase.initializeApp();
-
-  // Load app configuration
   await loadConfig(); // ✅ Loads .env and assigns global mapboxAccessToken
-
-  // Set Mapbox access token
   mapbox.MapboxOptions.setAccessToken(mapboxAccessToken);
 
   runApp(const MyApp());
@@ -26,7 +21,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: BranchMapPage(),
+      home: SplashScreen(), // ✅ start here
     );
   }
 }
