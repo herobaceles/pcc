@@ -1,9 +1,10 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'search_field.dart';
 
 class BranchServicesModal extends StatefulWidget {
-  final DocumentReference branchRef; // ✅ Reference, not string
+  final DocumentReference branchRef;
   final String branchName;
   final Color themeColor;
 
@@ -20,11 +21,22 @@ class BranchServicesModal extends StatefulWidget {
 
 class _BranchServicesModalState extends State<BranchServicesModal> {
   String _searchQuery = "";
+  late final Stream<QuerySnapshot> _servicesStream; // ✅ Cached stream
+
+  @override
+  void initState() {
+    super.initState();
+    _servicesStream = FirebaseFirestore.instance
+        .collection('services')
+        .where(
+          'availability',
+          arrayContains: widget.branchRef,
+        )
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
-    print("DEBUG → BranchServicesModal branchRef = ${widget.branchRef.path}");
-
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
@@ -32,42 +44,66 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
           padding: const EdgeInsets.all(20),
           child: Material(
             color: Colors.transparent,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20), // ✅ Rounded modal
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20), // ✅ Same radius
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
                 child: StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('services')
-                      .where('availability', isEqualTo: widget.branchRef) // ✅ Reference match
-                      .snapshots(),
+                  stream: _servicesStream,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: CircularProgressIndicator(),
-                        ),
+                      // ✅ Branded loader with blur
+                      return Stack(
+                        children: [
+                          Positioned.fill(
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                              child: Container(
+                                color: Colors.black.withValues(alpha: 0.25),
+                              ),
+                            ),
+                          ),
+                          const Center(
+                            child: SizedBox(
+                              height: 60,
+                              width: 60,
+                              child: Image(
+                                image: AssetImage('assets/PCCSUS.png'),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        ],
                       );
                     }
 
                     if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          "No services available.",
-                          style: TextStyle(fontSize: 14, color: Colors.black54),
+                      return _buildFixedHeight(
+                        child: const Center(
+                          child: Text(
+                            "No services available.",
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.black54,
+                            ),
+                          ),
                         ),
                       );
                     }
 
-                    print("DEBUG → Services fetched: ${snapshot.data!.docs.length}");
-
                     final allServices = snapshot.data!.docs;
 
+                    // 🔎 Apply search filter locally
                     final filteredServices = allServices.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final name =
@@ -78,73 +114,70 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
                           desc.contains(_searchQuery.toLowerCase());
                     }).toList();
 
-                    final bool isScrollable = filteredServices.length > 4;
-
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Header
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 20, 12, 8),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  "${widget.branchName} Services",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: widget.themeColor,
+                    return _buildFixedHeight(
+                      child: Column(
+                        children: [
+                          // Header
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 20, 12, 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    "${widget.branchName} Services",
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: widget.themeColor,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close, color: Colors.grey),
-                                onPressed: () => Navigator.pop(context),
-                              ),
-                            ],
+                                IconButton(
+                                  icon: const Icon(Icons.close,
+                                      color: Colors.grey),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
 
-                        // Search bar
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                          child: SearchField(
-                            hintText: "Search services...",
-                            onChanged: (value) {
-                              setState(() {
-                                _searchQuery = value;
-                              });
-                            },
-                            onSearchPressed: () => setState(() {}),
-                          ),
-                        ),
-
-                        const Divider(height: 1),
-
-                        // Services list
-                        if (isScrollable)
-                          Flexible(
-                            child: ListView.builder(
-                              padding:
-                                  const EdgeInsets.fromLTRB(12, 16, 12, 20),
-                              itemCount: filteredServices.length,
-                              itemBuilder: (context, index) {
-                                return _buildServiceTile(filteredServices[index]);
+                          // Search bar
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                            child: SearchField(
+                              hintText: "Search services...",
+                              onChanged: (value) {
+                                setState(() => _searchQuery = value);
                               },
                             ),
-                          )
-                        else
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 16, 12, 20),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: filteredServices
-                                  .map((doc) => _buildServiceTile(doc))
-                                  .toList(),
-                            ),
                           ),
-                      ],
+
+                          const Divider(height: 1),
+
+                          // Services list area
+                          Expanded(
+                            child: filteredServices.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      "No results match your search.",
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        12, 16, 12, 20),
+                                    itemCount: filteredServices.length,
+                                    itemBuilder: (context, index) {
+                                      return _buildServiceTile(
+                                          filteredServices[index]);
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -156,6 +189,14 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
     );
   }
 
+  /// ✅ Keeps modal at fixed height even if empty
+  Widget _buildFixedHeight({required Widget child}) {
+    return SizedBox(
+      height: 600,
+      child: child,
+    );
+  }
+
   Widget _buildServiceTile(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Container(
@@ -164,7 +205,7 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12), // ✅ Rounded cards
         boxShadow: [
           BoxShadow(
             color: Colors.black12,
