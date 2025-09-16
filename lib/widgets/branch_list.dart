@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher_string.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ For DocumentReference
 import '../models/branch.dart';
-import 'branch_services_modal.dart'; // ✅ modal
+import 'branch_services_modal.dart';
 
 class BranchList extends StatelessWidget {
   final List<Branch> branches;
@@ -31,8 +32,7 @@ class BranchList extends StatelessWidget {
   Future<void> _launchNavigation(Branch branch) async {
     final lat = branch.latitude.toStringAsFixed(6);
     final lng = branch.longitude.toStringAsFixed(6);
-    final url =
-        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
+    final url = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
     if (await canLaunchUrlString(url)) {
       await launchUrlString(url);
     }
@@ -146,14 +146,14 @@ class BranchList extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Map preview (no extra markers, just Studio style)
+            // Map preview
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SizedBox(
                 height: 140,
                 child: mapbox.MapWidget(
                   key: ValueKey("branch-map-${branch.id}"),
-                  styleUri: mapbox.MapboxStyles.MAPBOX_STREETS,
+                  styleUri: "mapbox://styles/salam17/cmfkq2hqe006u01sd3ig62gz0",
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(
                       coordinates: mapbox.Position(
@@ -163,9 +163,6 @@ class BranchList extends StatelessWidget {
                     ),
                     zoom: 14,
                   ),
-                  onMapCreated: (map) async {
-                    // No annotation manager → rely only on your Studio style
-                  },
                 ),
               ),
             ),
@@ -188,8 +185,8 @@ class BranchList extends StatelessWidget {
                 ),
                 if (distance != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.green.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -284,11 +281,15 @@ class BranchList extends StatelessWidget {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () {
+                      final branchRef = FirebaseFirestore.instance
+                          .collection("branches")
+                          .doc(branch.id); // ✅ DocumentReference
+
                       showDialog(
                         context: context,
                         barrierColor: Colors.black54,
                         builder: (_) => BranchServicesModal(
-                          branchId: branch.id,
+                          branchRef: branchRef,
                           branchName: branch.name,
                           themeColor: pccBlue,
                         ),

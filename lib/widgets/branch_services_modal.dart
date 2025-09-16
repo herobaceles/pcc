@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'search_field.dart'; // ✅ reuse your SearchField
+import 'search_field.dart';
 
 class BranchServicesModal extends StatefulWidget {
-  final String branchId;
+  final DocumentReference branchRef; // ✅ Reference, not string
   final String branchName;
   final Color themeColor;
 
   const BranchServicesModal({
     super.key,
-    required this.branchId,
+    required this.branchRef,
     required this.branchName,
     this.themeColor = const Color(0xFF0255C2),
   });
@@ -23,6 +23,8 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
 
   @override
   Widget build(BuildContext context) {
+    print("DEBUG → BranchServicesModal branchRef = ${widget.branchRef.path}");
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
@@ -37,15 +39,11 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: FutureBuilder<QuerySnapshot>(
-                  future: FirebaseFirestore.instance
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
                       .collection('services')
-                      .where(
-                        'availability',
-                        isEqualTo: FirebaseFirestore.instance
-                            .doc('branches/${widget.branchId}'),
-                      )
-                      .get(),
+                      .where('availability', isEqualTo: widget.branchRef) // ✅ Reference match
+                      .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
@@ -60,15 +58,16 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
                       return const Padding(
                         padding: EdgeInsets.all(24),
                         child: Text(
-                          "No services listed.",
+                          "No services available.",
                           style: TextStyle(fontSize: 14, color: Colors.black54),
                         ),
                       );
                     }
 
+                    print("DEBUG → Services fetched: ${snapshot.data!.docs.length}");
+
                     final allServices = snapshot.data!.docs;
 
-                    // Apply search filter
                     final filteredServices = allServices.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final name =
@@ -79,13 +78,12 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
                           desc.contains(_searchQuery.toLowerCase());
                     }).toList();
 
-                    // Decide scrollable or auto-size
                     final bool isScrollable = filteredServices.length > 4;
 
                     return Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Header with close button
+                        // Header
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 20, 12, 8),
                           child: Row(
@@ -118,9 +116,7 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
                                 _searchQuery = value;
                               });
                             },
-                            onSearchPressed: () {
-                              setState(() {}); // refresh list
-                            },
+                            onSearchPressed: () => setState(() {}),
                           ),
                         ),
 
@@ -163,9 +159,9 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
   Widget _buildServiceTile(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8), // ✅ only vertical margin
+      margin: const EdgeInsets.symmetric(vertical: 8),
       padding: const EdgeInsets.all(14),
-      width: double.infinity, // ✅ stretch to fill available width
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -199,9 +195,9 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
               "Running days: ${data['running_days']}",
               style: const TextStyle(fontSize: 13, color: Colors.black54),
             ),
-          if (data['results_tat'] != null)
+          if (data['results_tats'] != null)
             Text(
-              "TAT: ${data['results_tat']}",
+              "TAT: ${data['results_tats']}",
               style: const TextStyle(fontSize: 13, color: Colors.black54),
             ),
           if (data['patient_preparation'] != null)

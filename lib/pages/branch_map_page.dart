@@ -418,7 +418,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
                                       child: mapbox.MapWidget(
                                         key: const ValueKey("mapbox"),
                                         styleUri:
-                                            mapbox.MapboxStyles.MAPBOX_STREETS,
+                                            "mapbox://styles/salam17/cmfkq2hqe006u01sd3ig62gz0",
                                         cameraOptions: mapbox.CameraOptions(
                                           center: _branches.isNotEmpty
                                               ? mapbox.Point(

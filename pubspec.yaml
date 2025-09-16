@@ -1,10 +1,8 @@
 name: pccmobile
 description: A new Flutter project.
 
-# Prevent accidental publishing
-publish_to: "none"
+publish_to: "none" # Prevent accidental publishing
 
-# App versioning
 version: 1.0.0+1
 
 environment:
@@ -15,13 +13,13 @@ dependencies:
     sdk: flutter
 
   # Firebase
-  firebase_core: ^3.8.0   # check latest
-  cloud_firestore: ^5.4.0 # Firestore (if needed)
-  firebase_auth: ^5.2.0   # Authentication (if needed)
+  firebase_core: ^3.8.0
+  cloud_firestore: ^5.4.0
+  firebase_auth: ^5.2.0
 
-  # ✅ Use the new Mapbox SDK only
+  # ✅ Use the new Mapbox SDK only (null-safe)
   mapbox_maps_flutter: ^2.1.0
-  mapbox_search: ^4.3.2   # optional: search/autocomplete
+  mapbox_search: ^4.3.2   # use this for search/autocomplete
 
   # Cupertino Icons
   cupertino_icons: ^1.0.8
@@ -35,7 +33,7 @@ dependencies:
   # HTTP client
   http: ^1.1.0
 
-  # Huawei Location (optional, only if needed for Huawei devices)
+  # Huawei Location (optional)
   huawei_location: ^6.11.0+300
 
   # Environment variables
