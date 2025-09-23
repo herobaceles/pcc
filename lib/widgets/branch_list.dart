@@ -1,28 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:url_launcher/url_launcher_string.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ For DocumentReference
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import '../models/branch.dart';
 import 'branch_services_modal.dart';
 
 class BranchList extends StatelessWidget {
-  final List<Branch> branches;
   final List<Branch> allBranches;
   final geo.Position? userPosition;
   final geo.Position? searchPosition;
   final String searchQuery;
+  final List<String> selectedServiceIds;
+  final Map<String, String> serviceNames;
   final RichText Function(String, String, {TextStyle? style})
       highlightTextBuilder;
   final ValueChanged<Branch> onSelect;
 
   const BranchList({
     super.key,
-    required this.branches,
     required this.allBranches,
     this.userPosition,
     this.searchPosition,
     this.searchQuery = "",
+    this.selectedServiceIds = const [],
+    this.serviceNames = const {},
     required this.highlightTextBuilder,
     required this.onSelect,
   });
@@ -32,35 +35,76 @@ class BranchList extends StatelessWidget {
   Future<void> _launchNavigation(Branch branch) async {
     final lat = branch.latitude.toStringAsFixed(6);
     final lng = branch.longitude.toStringAsFixed(6);
-    final url = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
+    final url =
+        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
+
     if (await canLaunchUrlString(url)) {
       await launchUrlString(url);
     }
   }
 
-  Branch? _getNearestBranch() {
-    if (allBranches.isEmpty) return null;
-    final basePos = searchPosition ?? userPosition;
-    if (basePos == null) return null;
+  /// ✅ Sort only. Filtering is handled in BranchMapPage.
+  List<Branch> _sortBranches(List<Branch> branches) {
+    final sorted = [...branches];
 
-    Branch nearest = allBranches.first;
-    double nearestDistance = geo.Geolocator.distanceBetween(
-      basePos.latitude,
-      basePos.longitude,
-      nearest.latitude,
-      nearest.longitude,
-    );
-
-    for (final branch in allBranches.skip(1)) {
-      final distance = geo.Geolocator.distanceBetween(
-        basePos.latitude,
-        basePos.longitude,
-        branch.latitude,
-        branch.longitude,
+    if (searchPosition != null) {
+      sorted.sort((a, b) {
+        final da = geo.Geolocator.distanceBetween(
+          searchPosition!.latitude,
+          searchPosition!.longitude,
+          a.latitude,
+          a.longitude,
+        );
+        final db = geo.Geolocator.distanceBetween(
+          searchPosition!.latitude,
+          searchPosition!.longitude,
+          b.latitude,
+          b.longitude,
+        );
+        return da.compareTo(db);
+      });
+    } else if (userPosition != null) {
+      sorted.sort((a, b) {
+        final da = geo.Geolocator.distanceBetween(
+          userPosition!.latitude,
+          userPosition!.longitude,
+          a.latitude,
+          a.longitude,
+        );
+        final db = geo.Geolocator.distanceBetween(
+          userPosition!.latitude,
+          userPosition!.longitude,
+          b.latitude,
+          b.longitude,
+        );
+        return da.compareTo(db);
+      });
+    } else {
+      sorted.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
-      if (distance < nearestDistance) {
-        nearest = branch;
-        nearestDistance = distance;
+    }
+
+    return sorted;
+  }
+
+  /// ✅ Find the nearest branch overall
+  Branch? _getNearestBranch() {
+    if (searchPosition == null || allBranches.isEmpty) return null;
+
+    Branch? nearest;
+    double nearestDist = double.infinity;
+
+    for (final b in allBranches) {
+      final dist = geo.Geolocator.distanceBetween(
+        searchPosition!.latitude,
+        searchPosition!.longitude,
+        b.latitude,
+        b.longitude,
+      );
+      if (dist < nearestDist) {
+        nearest = b;
+        nearestDist = dist;
       }
     }
     return nearest;
@@ -68,31 +112,15 @@ class BranchList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (branches.isEmpty && (searchPosition != null || userPosition != null)) {
+    var branches = _sortBranches(allBranches);
+    bool showingFallback = false;
+
+    // ✅ If no branches found after search, show nearest branch instead
+    if (branches.isEmpty && searchPosition != null) {
       final nearest = _getNearestBranch();
       if (nearest != null) {
-        final basePos = searchPosition ?? userPosition!;
-        final distance = geo.Geolocator.distanceBetween(
-              basePos.latitude,
-              basePos.longitude,
-              nearest.latitude,
-              nearest.longitude,
-            ) /
-            1000;
-
-        return ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
-            Text(
-              searchPosition != null
-                  ? "No exact match. Nearest branch (${distance.toStringAsFixed(2)} km away):"
-                  : "No match. Nearest branch (${distance.toStringAsFixed(2)} km away):",
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 8),
-            _buildBranchCard(context, nearest),
-          ],
-        );
+        branches = [nearest];
+        showingFallback = true;
       }
     }
 
@@ -105,18 +133,48 @@ class BranchList extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      itemCount: branches.length,
-      itemBuilder: (context, i) {
-        return _buildBranchCard(context, branches[i]);
-      },
+    return Column(
+      children: [
+        if (showingFallback)
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: pccBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info, color: Colors.blue),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "No branches were found in this area. Showing the nearest branch instead.",
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: pccBlue,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+            itemCount: branches.length,
+            itemBuilder: (context, i) => _buildBranchCard(context, branches[i]),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildBranchCard(BuildContext context, Branch branch) {
     double? distance;
     final basePos = searchPosition ?? userPosition;
+
     if (basePos != null) {
       distance = geo.Geolocator.distanceBetween(
             basePos.latitude,
@@ -127,6 +185,12 @@ class BranchList extends StatelessWidget {
           1000;
     }
 
+    final staticMapUrl =
+        "https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/"
+        "pin-l+0255C2(${branch.longitude},${branch.latitude})/"
+        "${branch.longitude},${branch.latitude},14,0/600x300"
+        "?access_token=${dotenv.env['mapbox_access_token']}";
+
     return GestureDetector(
       onTap: () => onSelect(branch),
       child: Container(
@@ -135,40 +199,38 @@ class BranchList extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           color: Colors.white,
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(
               color: Colors.black12,
               blurRadius: 4,
-              offset: const Offset(0, 2),
+              offset: Offset(0, 2),
             )
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Map preview
+            // Static map
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SizedBox(
                 height: 140,
-                child: mapbox.MapWidget(
-                  key: ValueKey("branch-map-${branch.id}"),
-                  styleUri: "mapbox://styles/salam17/cmfkq2hqe006u01sd3ig62gz0",
-                  cameraOptions: mapbox.CameraOptions(
-                    center: mapbox.Point(
-                      coordinates: mapbox.Position(
-                        branch.longitude,
-                        branch.latitude,
-                      ),
+                width: double.infinity,
+                child: Image.network(
+                  staticMapUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (c, e, s) => Container(
+                    color: Colors.grey[200],
+                    child: const Center(
+                      child: Icon(Icons.map, color: Colors.grey, size: 40),
                     ),
-                    zoom: 14,
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 10),
 
-            // Title + distance
+            // Name + Distance
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -188,7 +250,7 @@ class BranchList extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
+                      color: Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -222,40 +284,59 @@ class BranchList extends StatelessWidget {
                   child: highlightTextBuilder(
                     branch.address,
                     searchQuery,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.black87,
-                    ),
+                    style: const TextStyle(fontSize: 13, color: Colors.black87),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
 
-            // Contact & Email
-            Row(
-              children: [
-                const Icon(Icons.phone, color: Color(0xFF0255C2), size: 16),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(branch.contact,
-                      style: TextStyle(fontSize: 13, color: pccBlue)),
-                ),
-              ],
-            ),
+            // Contact
+            if (branch.contact.isNotEmpty)
+              Row(
+                children: [
+                  const Icon(Icons.phone, color: Color(0xFF0255C2), size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(branch.contact,
+                        style: TextStyle(fontSize: 13, color: pccBlue)),
+                  ),
+                ],
+              ),
             const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.email, color: Color(0xFF0255C2), size: 16),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(branch.email,
-                      style: TextStyle(fontSize: 13, color: pccBlue)),
-                ),
-              ],
-            ),
 
+            // Email
+            if (branch.email.isNotEmpty)
+              Row(
+                children: [
+                  const Icon(Icons.email, color: Color(0xFF0255C2), size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(branch.email,
+                        style: TextStyle(fontSize: 13, color: pccBlue)),
+                  ),
+                ],
+              ),
             const SizedBox(height: 8),
+
+            // Services
+            if (branch.services.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: -8,
+                children: branch.services.map((sid) {
+                  final name = serviceNames[sid] ?? sid;
+                  return Chip(
+                    label: Text(
+                      name,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    backgroundColor: pccBlue.withOpacity(0.1),
+                    labelStyle: TextStyle(color: pccBlue),
+                  );
+                }).toList(),
+              ),
+            if (branch.services.isNotEmpty) const SizedBox(height: 8),
 
             // Buttons
             Row(
@@ -283,7 +364,7 @@ class BranchList extends StatelessWidget {
                     onPressed: () {
                       final branchRef = FirebaseFirestore.instance
                           .collection("branches")
-                          .doc(branch.id); // ✅ DocumentReference
+                          .doc(branch.id);
 
                       showDialog(
                         context: context,
@@ -299,7 +380,7 @@ class BranchList extends StatelessWidget {
                     label: const Text("Services",
                         style: TextStyle(fontSize: 14)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: pccBlue.withValues(alpha: 0.08),
+                      backgroundColor: pccBlue.withOpacity(0.08),
                       foregroundColor: pccBlue,
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       shape: RoundedRectangleBorder(

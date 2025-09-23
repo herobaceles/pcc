@@ -1,639 +1,6 @@
-// // ignore_for_file: prefer_final_fields
-
-// import 'dart:async';
-// import 'dart:convert';
-// import 'dart:ui';
-// import 'package:flutter/material.dart';
-// import 'package:flutter_dotenv/flutter_dotenv.dart';
-// import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
-// import 'package:geolocator/geolocator.dart' as geo;
-// import 'package:http/http.dart' as http;
-// import 'package:cloud_firestore/cloud_firestore.dart';
-
-// import '../models/branch.dart';
-// import '../widgets/action_buttons.dart';
-// import '../widgets/toggle_chips.dart';
-// import '../widgets/branch_list.dart' as bl;
-// import 'app_drawer.dart';
-
-// class BranchMapPage extends StatefulWidget {
-//   const BranchMapPage({super.key});
-
-//   @override
-//   State<BranchMapPage> createState() => _BranchMapPageState();
-// }
-
-// class _BranchMapPageState extends State<BranchMapPage> {
-//   mapbox.MapboxMap? _mapboxMap;
-
-//   List<Branch> _branches = [];
-//   String _searchQuery = "";
-//   bool _showMap = false;
-//   bool _showNearbyOnly = false;
-//   bool _isSearching = false;
-//   geo.Position? _userPosition;
-//   geo.Position? _searchPosition;
-
-//   Branch? _nearestFromSearch;
-
-//   // Suggestions state
-//   List<Map<String, dynamic>> _suggestions = [];
-//   Timer? _debounce;
-
-//   // Route coords
-//   List<List<double>> _routeCoordinates = [];
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     _listenBranches();
-//     _initUserLocationAndNearbyBranches();
-//   }
-
-//   Future<void> _initUserLocationAndNearbyBranches() async {
-//     setState(() => _isSearching = true);
-//     try {
-//       if (!await geo.Geolocator.isLocationServiceEnabled()) return;
-
-//       var permission = await geo.Geolocator.checkPermission();
-//       if (permission == geo.LocationPermission.denied) {
-//         permission = await geo.Geolocator.requestPermission();
-//         if (permission == geo.LocationPermission.denied) return;
-//       }
-//       if (permission == geo.LocationPermission.deniedForever) return;
-
-//       final pos = await geo.Geolocator.getCurrentPosition(
-//         desiredAccuracy: geo.LocationAccuracy.high,
-//       );
-
-//       if (!mounted) return;
-//       setState(() {
-//         _userPosition = pos;
-//         _showNearbyOnly = true;
-//       });
-//     } catch (e) {
-//       debugPrint("Error getting location: $e");
-//     } finally {
-//       if (mounted) setState(() => _isSearching = false);
-//     }
-//   }
-
-//   Future<void> _flyToUserLocation() async {
-//     if (_userPosition == null) {
-//       await _initUserLocationAndNearbyBranches();
-//     }
-//     if (_userPosition == null) return;
-
-//     setState(() {
-//       _showNearbyOnly = true;
-//       _searchPosition = null;
-//     });
-
-//     if (_filteredBranches.isNotEmpty) {
-//       final nearest = _filteredBranches.first;
-//       await _flyToLocation(
-//         mapbox.Position(nearest.longitude, nearest.latitude),
-//         zoom: 14,
-//       );
-//     }
-//   }
-
-//   Future<void> _flyToLocation(mapbox.Position pos, {double zoom = 12}) async {
-//     if (_mapboxMap == null) return;
-//     await _mapboxMap!.flyTo(
-//       mapbox.CameraOptions(center: mapbox.Point(coordinates: pos), zoom: zoom),
-//       mapbox.MapAnimationOptions(duration: 1000),
-//     );
-//   }
-
-//   // Fetch live suggestions from Mapbox
-//   Future<void> _fetchSuggestions(String query) async {
-//     if (query.isEmpty) {
-//       setState(() => _suggestions = []);
-//       return;
-//     }
-
-//     final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
-//     final url = Uri.parse(
-//       "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json"
-//       "?access_token=$mapboxToken&autocomplete=true&limit=5&country=PH",
-//     );
-
-//     try {
-//       final res = await http.get(url);
-//       if (res.statusCode == 200) {
-//         final data = jsonDecode(res.body);
-//         final features = data["features"] as List<dynamic>;
-//         setState(() {
-//           _suggestions = features.map((f) {
-//             return {
-//               "place": f["place_name"],
-//               "lat": f["geometry"]["coordinates"][1],
-//               "lng": f["geometry"]["coordinates"][0],
-//             };
-//           }).toList();
-//         });
-//       }
-//     } catch (e) {
-//       debugPrint("Error fetching suggestions: $e");
-//     }
-//   }
-
-//   // Select suggestion → fly map + fetch route
-//   Future<void> _selectSuggestion(Map<String, dynamic> suggestion) async {
-//     final lat = suggestion["lat"];
-//     final lng = suggestion["lng"];
-
-//     setState(() {
-//       _searchQuery = suggestion["place"];
-//       _suggestions = [];
-//       _searchPosition = geo.Position(
-//         latitude: lat,
-//         longitude: lng,
-//         timestamp: DateTime.now(),
-//         accuracy: 0,
-//         altitude: 0,
-//         altitudeAccuracy: 0,
-//         heading: 0,
-//         headingAccuracy: 0,
-//         speed: 0,
-//         speedAccuracy: 0,
-//       );
-//     });
-
-//     await _flyToLocation(mapbox.Position(lng, lat), zoom: 13);
-//     _findNearestBranch();
-
-//     if (_nearestFromSearch != null) {
-//       await _fetchRoute(
-//         [lng, lat],
-//         [_nearestFromSearch!.longitude, _nearestFromSearch!.latitude],
-//       );
-//     }
-//   }
-
-//   void _findNearestBranch() {
-//     if (_searchPosition == null || _branches.isEmpty) return;
-
-//     Branch? nearest;
-//     double nearestDist = double.infinity;
-
-//     for (final b in _branches) {
-//       final dist = geo.Geolocator.distanceBetween(
-//         _searchPosition!.latitude,
-//         _searchPosition!.longitude,
-//         b.latitude,
-//         b.longitude,
-//       );
-//       if (dist < nearestDist) {
-//         nearest = b;
-//         nearestDist = dist;
-//       }
-//     }
-
-//     if (nearest != null) {
-//       setState(() => _nearestFromSearch = nearest);
-//     }
-//   }
-
-//   // Fetch route from Mapbox Directions API
-//   Future<void> _fetchRoute(List<double> origin, List<double> destination) async {
-//     final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
-//     final url =
-//         "https://api.mapbox.com/directions/v5/mapbox/driving/${origin[0]},${origin[1]};${destination[0]},${destination[1]}"
-//         "?geometries=geojson&access_token=$mapboxToken";
-
-//     try {
-//       final res = await http.get(Uri.parse(url));
-//       if (res.statusCode == 200) {
-//         final data = jsonDecode(res.body);
-//         final route = data["routes"][0]["geometry"]["coordinates"] as List;
-//         setState(() {
-//           _routeCoordinates = route.map<List<double>>((c) => [c[0], c[1]]).toList();
-//         });
-//         await _drawRouteOnMap();
-//       }
-//     } catch (e) {
-//       debugPrint("Error fetching route: $e");
-//     }
-//   }
-
-//   // Draw route line on map
-//   Future<void> _drawRouteOnMap() async {
-//     if (_mapboxMap == null || _routeCoordinates.isEmpty) return;
-
-//     final routeData = {
-//       "type": "FeatureCollection",
-//       "features": [
-//         {
-//           "type": "Feature",
-//           "geometry": {
-//             "type": "LineString",
-//             "coordinates": _routeCoordinates,
-//           },
-//         }
-//       ]
-//     };
-
-//     final style = _mapboxMap!.style;
-
-//     if (await style.styleSourceExists("route-source")) {
-//       await style.removeStyleLayer("route-layer");
-//       await style.removeStyleSource("route-source");
-//     }
-
-//     final source = mapbox.GeoJsonSource(
-//       id: "route-source",
-//       data: jsonEncode(routeData), // ✅ FIX
-//     );
-//     await style.addSource(source);
-
-//     final layer = mapbox.LineLayer(
-//       id: "route-layer",
-//       sourceId: "route-source",
-//       lineColor: Colors.blue.value, // ✅ FIX
-//       lineWidth: 5.0,
-//     );
-//     await style.addLayer(layer);
-//   }
-
-//   void _listenBranches() {
-//     FirebaseFirestore.instance.collection('branches').snapshots().listen(
-//       (snapshot) {
-//         final branches = snapshot.docs.map((doc) {
-//           return Branch.fromJson({'id': doc.id, ...doc.data()});
-//         }).toList();
-
-//         setState(() => _branches = branches);
-//       },
-//       onError: (e) => debugPrint("Error fetching branches: $e"),
-//     );
-//   }
-
-//   List<Branch> get _filteredBranches {
-//     final query = _searchQuery.trim().toLowerCase();
-
-//     if (_searchPosition != null) {
-//       var filtered = _branches.where((b) {
-//         final searchable = "${b.name} ${b.address}".toLowerCase();
-//         return searchable.contains(query);
-//       }).toList();
-
-//       if (filtered.isEmpty && _nearestFromSearch != null) {
-//         return [_nearestFromSearch!];
-//       }
-//       return filtered;
-//     }
-
-//     if (_showNearbyOnly && _userPosition != null) {
-//       var nearby = _branches.where((b) {
-//         final distance = geo.Geolocator.distanceBetween(
-//           _userPosition!.latitude,
-//           _userPosition!.longitude,
-//           b.latitude,
-//           b.longitude,
-//         );
-//         return distance <= 10000;
-//       }).toList();
-
-//       nearby.sort((a, b) {
-//         final distA = geo.Geolocator.distanceBetween(
-//           _userPosition!.latitude,
-//           _userPosition!.longitude,
-//           a.latitude,
-//           a.longitude,
-//         );
-//         final distB = geo.Geolocator.distanceBetween(
-//           _userPosition!.latitude,
-//           _userPosition!.longitude,
-//           b.latitude,
-//           b.longitude,
-//         );
-//         return distA.compareTo(distB);
-//       });
-//       return nearby;
-//     }
-
-//     var sorted = [..._branches];
-//     sorted.sort((a, b) {
-//       final nameA =
-//           a.name.replaceFirst(RegExp(r'^PCC\\s*', caseSensitive: false), '');
-//       final nameB =
-//           b.name.replaceFirst(RegExp(r'^PCC\\s*', caseSensitive: false), '');
-//       return nameA.compareTo(nameB);
-//     });
-//     return sorted;
-//   }
-
-//   RichText highlightText(String text, String query, {TextStyle? style}) {
-//     final effectiveStyle = style ?? const TextStyle(color: Colors.black);
-//     final trimmedQuery = query.trim();
-//     if (trimmedQuery.isEmpty) {
-//       return RichText(text: TextSpan(text: text, style: effectiveStyle));
-//     }
-
-//     final lowerText = text.toLowerCase();
-//     final lowerQuery = trimmedQuery.toLowerCase();
-//     final spans = <TextSpan>[];
-//     int start = 0;
-
-//     while (true) {
-//       final index = lowerText.indexOf(lowerQuery, start);
-//       if (index < 0) {
-//         spans.add(TextSpan(text: text.substring(start), style: effectiveStyle));
-//         break;
-//       }
-//       if (index > start) {
-//         spans.add(TextSpan(
-//             text: text.substring(start, index), style: effectiveStyle));
-//       }
-//       spans.add(TextSpan(
-//         text: text.substring(index, index + lowerQuery.length),
-//         style: effectiveStyle.copyWith(
-//           backgroundColor: const Color.fromARGB(110, 4, 217, 228),
-//           fontWeight: FontWeight.bold,
-//         ),
-//       ));
-//       start = index + lowerQuery.length;
-//     }
-//     return RichText(text: TextSpan(children: spans, style: effectiveStyle));
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       backgroundColor: Colors.white,
-//       endDrawer: const AppDrawer(),
-//       appBar: AppBar(
-//         backgroundColor: Colors.white,
-//         elevation: 0,
-//         surfaceTintColor: Colors.transparent,
-//         title: Row(
-//           children: [
-//             Image.asset('assets/PCCSUS.png', height: 40),
-//             const SizedBox(width: 8),
-//             const Text(
-//               "PCC SUPP",
-//               style: TextStyle(
-//                 color: Color(0xFF0255C2),
-//                 fontWeight: FontWeight.bold,
-//               ),
-//             ),
-//           ],
-//         ),
-//         actions: [
-//           Builder(
-//             builder: (context) => IconButton(
-//               icon: const Icon(Icons.menu, color: Color(0xFF0255C2)),
-//               onPressed: () => Scaffold.of(context).openEndDrawer(),
-//             ),
-//           ),
-//         ],
-//       ),
-//       body: SafeArea(
-//         child: Stack(
-//           children: [
-//             Column(
-//               children: [
-//                 const Padding(
-//                   padding: EdgeInsets.all(16),
-//                   child: Column(
-//                     crossAxisAlignment: CrossAxisAlignment.center,
-//                     children: [
-//                       Text("Find Your Nearest",
-//                           style: TextStyle(
-//                               fontSize: 30, fontWeight: FontWeight.bold)),
-//                       SizedBox(height: 8),
-//                       Text(
-//                         "PCC SUPP",
-//                         style: TextStyle(
-//                           fontSize: 36,
-//                           fontWeight: FontWeight.w900,
-//                           color: Color(0xFF0255C2),
-//                         ),
-//                       ),
-//                       SizedBox(height: 4),
-//                       Text(
-//                         "Bringing quality healthcare closer to you...",
-//                         textAlign: TextAlign.center,
-//                         style: TextStyle(
-//                           fontSize: 16,
-//                           color: Color(0xFF242323),
-//                           fontWeight: FontWeight.w600,
-//                           fontStyle: FontStyle.italic,
-//                           height: 1.4,
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//                 const SizedBox(height: 12),
-//                 Padding(
-//                   padding: const EdgeInsets.symmetric(horizontal: 16),
-//                   child: ActionButtons(
-//                     onToggle: () async {
-//                       if (_showNearbyOnly) {
-//                         setState(() {
-//                           _showNearbyOnly = false;
-//                           _searchPosition = null;
-//                           _nearestFromSearch = null;
-//                         });
-//                       } else {
-//                         await _flyToUserLocation();
-//                       }
-//                     },
-//                     onViewAll: () {
-//                       setState(() {
-//                         _showNearbyOnly = false;
-//                         _searchPosition = null;
-//                         _nearestFromSearch = null;
-//                       });
-//                     },
-//                     isNearbyMode: _showNearbyOnly,
-//                     isLoading: _isSearching,
-//                     nearbyCount: _filteredBranches.length,
-//                   ),
-//                 ),
-//                 const SizedBox(height: 12),
-
-//                 // Search Field with Suggestions
-//                 Padding(
-//                   padding: const EdgeInsets.symmetric(horizontal: 16),
-//                   child: Column(
-//                     children: [
-//                       TextField(
-//                         decoration: InputDecoration(
-//                           hintText: "Search branch or place...",
-//                           prefixIcon: const Icon(Icons.search,
-//                               color: Color(0xFF0255C2)),
-//                           border: OutlineInputBorder(
-//                             borderRadius: BorderRadius.circular(12),
-//                             borderSide:
-//                                 BorderSide(color: Colors.grey.shade300),
-//                           ),
-//                           filled: true,
-//                           fillColor: Colors.white,
-//                         ),
-//                         onChanged: (val) {
-//                           if (_debounce?.isActive ?? false) _debounce!.cancel();
-//                           _debounce = Timer(const Duration(milliseconds: 400),
-//                               () => _fetchSuggestions(val));
-//                           setState(() => _searchQuery = val);
-//                         },
-//                       ),
-//                       if (_suggestions.isNotEmpty)
-//                         Container(
-//                           margin: const EdgeInsets.only(top: 4),
-//                           decoration: BoxDecoration(
-//                             color: Colors.white,
-//                             borderRadius: BorderRadius.circular(8),
-//                             boxShadow: const [
-//                               BoxShadow(
-//                                   color: Colors.black26,
-//                                   blurRadius: 4,
-//                                   offset: Offset(0, 2))
-//                             ],
-//                           ),
-//                           child: ListView.builder(
-//                             shrinkWrap: true,
-//                             itemCount: _suggestions.length,
-//                             itemBuilder: (context, i) {
-//                               final suggestion = _suggestions[i];
-//                               return ListTile(
-//                                 title: Text(suggestion["place"]),
-//                                 onTap: () => _selectSuggestion(suggestion),
-//                               );
-//                             },
-//                           ),
-//                         ),
-//                     ],
-//                   ),
-//                 ),
-
-//                 const SizedBox(height: 12),
-//                 Expanded(
-//                   child: Stack(
-//                     children: [
-//                       Column(
-//                         children: [
-//                           Padding(
-//                             padding: const EdgeInsets.symmetric(horizontal: 16),
-//                             child: Align(
-//                               alignment: Alignment.centerLeft,
-//                               child: ToggleChips(
-//                                 showMap: _showMap,
-//                                 onToggle: (val) {
-//                                   FocusScope.of(context).unfocus();
-//                                   setState(() => _showMap = val);
-//                                 },
-//                               ),
-//                             ),
-//                           ),
-//                           const SizedBox(height: 12),
-//                           Expanded(
-//                             child: Stack(
-//                               children: [
-//                                 Offstage(
-//                                   offstage: !_showMap,
-//                                   child: Padding(
-//                                     padding: const EdgeInsets.symmetric(
-//                                         horizontal: 16, vertical: 8),
-//                                     child: ClipRRect(
-//                                       borderRadius: BorderRadius.circular(16),
-//                                       child: mapbox.MapWidget(
-//                                         key: const ValueKey("mapbox"),
-//                                         styleUri:
-//                                             "mapbox://styles/salam17/cmfkq2hqe006u01sd3ig62gz0",
-//                                         cameraOptions: mapbox.CameraOptions(
-//                                           center: _branches.isNotEmpty
-//                                               ? mapbox.Point(
-//                                                   coordinates: mapbox.Position(
-//                                                     _branches.first.longitude,
-//                                                     _branches.first.latitude,
-//                                                   ),
-//                                                 )
-//                                               : mapbox.Point(
-//                                                   coordinates: mapbox.Position(
-//                                                     120.9842,
-//                                                     14.5995,
-//                                                   ),
-//                                                 ),
-//                                           zoom: 12,
-//                                         ),
-//                                         onMapCreated: (map) async {
-//                                           _mapboxMap = map;
-//                                         },
-//                                       ),
-//                                     ),
-//                                   ),
-//                                 ),
-//                                 Offstage(
-//                                   offstage: _showMap,
-//                                   child: bl.BranchList(
-//                                     branches: _filteredBranches,
-//                                     allBranches: _branches,
-//                                     userPosition: _userPosition,
-//                                     searchPosition: _searchPosition,
-//                                     searchQuery: _searchQuery,
-//                                     highlightTextBuilder: highlightText,
-//                                     onSelect: (branch) async {
-//                                       if (_mapboxMap != null) {
-//                                         await _flyToLocation(
-//                                           mapbox.Position(
-//                                             branch.longitude,
-//                                             branch.latitude,
-//                                           ),
-//                                           zoom: 14,
-//                                         );
-//                                       }
-//                                     },
-//                                   ),
-//                                 ),
-//                               ],
-//                             ),
-//                           ),
-//                         ],
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               ],
-//             ),
-//             if (_isSearching)
-//               Positioned.fill(
-//                 child: BackdropFilter(
-//                   filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-//                   child: Container(
-//                     color: Colors.black.withValues(alpha: 0.25),
-//                     child: const Center(
-//                       child: SizedBox(
-//                         height: 60,
-//                         width: 60,
-//                         child: Image(
-//                           image: AssetImage('assets/PCCSUS.png'),
-//                           fit: BoxFit.contain,
-//                         ),
-//                       ),
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-
-// ignore_for_file: prefer_final_fields
-
-
-
-// ignore_for_file: prefer_final_fields
-
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -641,12 +8,15 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
-
+import 'package:huawei_location/huawei_location.dart' as hms;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/branch.dart';
 import '../widgets/action_buttons.dart';
 import '../widgets/toggle_chips.dart';
 import '../widgets/branch_list.dart' as bl;
 import 'app_drawer.dart';
+import '../widgets/search_field.dart';
+import '../widgets/filter_button.dart';
 
 class BranchMapPage extends StatefulWidget {
   const BranchMapPage({super.key});
@@ -657,55 +27,147 @@ class BranchMapPage extends StatefulWidget {
 
 class _BranchMapPageState extends State<BranchMapPage> {
   mapbox.MapboxMap? _mapboxMap;
+  mapbox.PolylineAnnotationManager? _polylineManager;
 
   List<Branch> _branches = [];
   String _searchQuery = "";
   bool _showMap = false;
   bool _showNearbyOnly = false;
   bool _isSearching = false;
+  bool _forceViewAll = false;
   geo.Position? _userPosition;
   geo.Position? _searchPosition;
 
-  Branch? _nearestFromSearch;
+  bool _isOnline = true;
 
-  List<Map<String, dynamic>> _suggestions = [];
-  Timer? _debounce;
-
-  List<List<double>> _routeCoordinates = [];
-
-  bool _isFetchingRoute = false;
-
-  static const String _routeSourceId = "route-source";
-  static const String _routeLayerId = "route-layer";
+  final TextEditingController _searchController = TextEditingController();
+  List<String> _selectedServiceIds = [];
 
   @override
   void initState() {
     super.initState();
     _listenBranches();
     _initUserLocationAndNearbyBranches();
+
+    Connectivity().onConnectivityChanged.listen((status) {
+      setState(() {
+        if (status is ConnectivityResult) {
+          _isOnline = status != ConnectivityResult.none;
+        } else if (status is List<ConnectivityResult>) {
+          _isOnline = !status.contains(ConnectivityResult.none);
+        }
+      });
+    });
   }
 
+  /// ✅ Listen for Firestore branch updates
+  void _listenBranches() {
+    FirebaseFirestore.instance.collection('branches').snapshots().listen(
+      (snapshot) {
+        final branches = snapshot.docs.map((doc) {
+          return Branch.fromJson({'id': doc.id, ...doc.data()});
+        }).toList();
+
+        setState(() => _branches = branches);
+      },
+      onError: (e) => debugPrint("Error fetching branches: $e"),
+    );
+  }
+
+  /// ✅ Init location
   Future<void> _initUserLocationAndNearbyBranches() async {
     setState(() => _isSearching = true);
     try {
-      if (!await geo.Geolocator.isLocationServiceEnabled()) return;
+      geo.Position? pos;
 
-      var permission = await geo.Geolocator.checkPermission();
-      if (permission == geo.LocationPermission.denied) {
-        permission = await geo.Geolocator.requestPermission();
-        if (permission == geo.LocationPermission.denied) return;
+      if (Platform.isAndroid) {
+        final serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
+        var permission = await geo.Geolocator.checkPermission();
+
+        if (serviceEnabled &&
+            permission != geo.LocationPermission.deniedForever) {
+          if (permission == geo.LocationPermission.denied) {
+            permission = await geo.Geolocator.requestPermission();
+          }
+          if (permission == geo.LocationPermission.always ||
+              permission == geo.LocationPermission.whileInUse) {
+            pos = await geo.Geolocator.getCurrentPosition(
+              desiredAccuracy: geo.LocationAccuracy.high,
+            );
+          }
+        }
+
+        // fallback Huawei
+        if (pos == null) {
+          try {
+            final locationService = hms.FusedLocationProviderClient();
+            final request = hms.LocationRequest()
+              ..priority = hms.LocationRequest.PRIORITY_HIGH_ACCURACY
+              ..interval = 10000
+              ..numUpdates = 1;
+
+            final completer = Completer<hms.Location?>();
+            final sub =
+                locationService.onLocationData?.listen((hms.Location location) {
+              if (!completer.isCompleted) completer.complete(location);
+            });
+
+            final reqCode =
+                await locationService.requestLocationUpdates(request);
+            final hmsLoc =
+                await completer.future.timeout(const Duration(seconds: 10));
+
+            if (reqCode != null) {
+              await locationService.removeLocationUpdates(reqCode);
+            }
+            await sub?.cancel();
+
+            if (hmsLoc != null) {
+              pos = geo.Position(
+                latitude: hmsLoc.latitude!,
+                longitude: hmsLoc.longitude!,
+                timestamp: DateTime.fromMillisecondsSinceEpoch(
+                    hmsLoc.time ?? DateTime.now().millisecondsSinceEpoch),
+                accuracy: 0.0,
+                altitude: hmsLoc.altitude?.toDouble() ?? 0.0,
+                altitudeAccuracy: 0.0,
+                heading: hmsLoc.bearing?.toDouble() ?? 0.0,
+                headingAccuracy: 0.0,
+                speed: hmsLoc.speed?.toDouble() ?? 0.0,
+                speedAccuracy: 0.0,
+              );
+            }
+          } catch (e) {
+            debugPrint("❌ Huawei Location error: $e");
+          }
+        }
+      } else {
+        final serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) return;
+
+        var permission = await geo.Geolocator.checkPermission();
+        if (permission == geo.LocationPermission.denied) {
+          permission = await geo.Geolocator.requestPermission();
+        }
+        if (permission == geo.LocationPermission.always ||
+            permission == geo.LocationPermission.whileInUse) {
+          pos = await geo.Geolocator.getCurrentPosition(
+            desiredAccuracy: geo.LocationAccuracy.high,
+          );
+        }
       }
-      if (permission == geo.LocationPermission.deniedForever) return;
 
-      final pos = await geo.Geolocator.getCurrentPosition(
-        desiredAccuracy: geo.LocationAccuracy.high,
-      );
+      if (!mounted || pos == null) return;
 
-      if (!mounted) return;
       setState(() {
         _userPosition = pos;
         _showNearbyOnly = true;
+        _forceViewAll = false;
       });
+
+      if (_filteredBranches.isNotEmpty) {
+        await _fitToBounds(_filteredBranches);
+      }
     } catch (e) {
       debugPrint("Error getting location: $e");
     } finally {
@@ -713,7 +175,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
     }
   }
 
-  Future<void> _flyToUserLocation() async {
+   Future<void> _flyToUserLocation() async {
     if (_userPosition == null) {
       await _initUserLocationAndNearbyBranches();
     }
@@ -722,13 +184,40 @@ class _BranchMapPageState extends State<BranchMapPage> {
     setState(() {
       _showNearbyOnly = true;
       _searchPosition = null;
+      _forceViewAll = false;
+      _clearPolyline();
     });
 
     if (_filteredBranches.isNotEmpty) {
-      final nearest = _filteredBranches.first;
-      await _flyToLocation(
-        mapbox.Position(nearest.longitude, nearest.latitude),
-        zoom: 14,
+      await _fitToBounds(_filteredBranches);
+
+      // ✅ also draw route to nearest branch from user location
+      Branch nearest = _filteredBranches.first;
+      double nearestDist = double.infinity;
+
+      for (final b in _filteredBranches) {
+        final dist = geo.Geolocator.distanceBetween(
+          _userPosition!.latitude,
+          _userPosition!.longitude,
+          b.latitude,
+          b.longitude,
+        );
+        if (dist < nearestDist) {
+          nearest = b;
+          nearestDist = dist;
+        }
+      }
+
+      await _drawPolyline(
+        start: mapbox.Point(
+          coordinates: mapbox.Position(
+            _userPosition!.longitude,
+            _userPosition!.latitude,
+          ),
+        ),
+        end: mapbox.Point(
+          coordinates: mapbox.Position(nearest.longitude, nearest.latitude),
+        ),
       );
     }
   }
@@ -741,48 +230,93 @@ class _BranchMapPageState extends State<BranchMapPage> {
     );
   }
 
-  Future<void> _fetchSuggestions(String query) async {
-    if (query.isEmpty) {
-      setState(() => _suggestions = []);
-      return;
-    }
+  Future<void> _fitToBounds(List<Branch> branches) async {
+    if (_mapboxMap == null || branches.isEmpty) return;
 
-    final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
-    if (mapboxToken.isEmpty) return;
+    final lats = branches.map((b) => b.latitude).toList();
+    final lngs = branches.map((b) => b.longitude).toList();
 
-    final url = Uri.parse(
-      "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json"
-      "?access_token=$mapboxToken&autocomplete=true&limit=5&country=PH",
+    final minLat = lats.reduce((a, b) => a < b ? a : b);
+    final maxLat = lats.reduce((a, b) => a > b ? a : b);
+    final minLng = lngs.reduce((a, b) => a < b ? a : b);
+    final maxLng = lngs.reduce((a, b) => a > b ? a : b);
+
+    final center = mapbox.Point(
+      coordinates: mapbox.Position(
+        (minLng + maxLng) / 2,
+        (minLat + maxLat) / 2,
+      ),
     );
 
-    try {
-      final res = await http.get(url);
-      if (!mounted) return;
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final features = (data["features"] as List<dynamic>? ?? []);
-        setState(() {
-          _suggestions = features.map((f) {
-            return {
-              "place": f["place_name"],
-              "lat": f["geometry"]["coordinates"][1],
-              "lng": f["geometry"]["coordinates"][0],
-            };
-          }).toList();
-        });
-      }
-    } catch (e) {
-      debugPrint("Error fetching suggestions: $e");
+    final latDelta = (maxLat - minLat).abs();
+    final lngDelta = (maxLng - minLng).abs();
+    final maxDelta = latDelta > lngDelta ? latDelta : lngDelta;
+
+    double zoom;
+    if (maxDelta < 0.005) {
+      zoom = 15;
+    } else if (maxDelta < 0.05) {
+      zoom = 13;
+    } else if (maxDelta < 0.2) {
+      zoom = 11;
+    } else {
+      zoom = 9;
     }
+
+    await _mapboxMap!.flyTo(
+      mapbox.CameraOptions(center: center, zoom: zoom),
+      mapbox.MapAnimationOptions(duration: 1200),
+    );
   }
 
+  /// ✅ Fetch autocomplete suggestions from Mapbox
+  /// ✅ Fetch autocomplete & full address suggestions from Mapbox
+Future<List<Map<String, dynamic>>> _fetchSuggestions(String query) async {
+  if (query.isEmpty) return [];
+
+  final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
+  if (mapboxToken.isEmpty) return [];
+
+  // 🔹 Encode query to handle spaces, commas, special chars
+  final encodedQuery = Uri.encodeComponent(query);
+
+  final url = Uri.parse(
+    "https://api.mapbox.com/geocoding/v5/mapbox.places/$encodedQuery.json"
+    "?access_token=$mapboxToken"
+    "&autocomplete=true"
+    "&limit=7" // increase results
+    "&country=PH"
+    "&types=address,place,region,locality,neighborhood,poi"
+  );
+
+  try {
+    final res = await http.get(url);
+    if (!mounted) return [];
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      final features = (data["features"] as List<dynamic>? ?? []);
+      return features.map((f) {
+        return {
+          "place": f["place_name"], // full address text
+          "lat": f["geometry"]["coordinates"][1],
+          "lng": f["geometry"]["coordinates"][0],
+        };
+      }).toList();
+    }
+  } catch (e) {
+    debugPrint("❌ Error fetching suggestions: $e");
+  }
+  return [];
+}
+
+
+  /// ✅ Handle suggestion select
   Future<void> _selectSuggestion(Map<String, dynamic> suggestion) async {
     final double lat = suggestion["lat"];
     final double lng = suggestion["lng"];
 
     setState(() {
       _searchQuery = suggestion["place"];
-      _suggestions = [];
       _searchPosition = geo.Position(
         latitude: lat,
         longitude: lng,
@@ -798,261 +332,250 @@ class _BranchMapPageState extends State<BranchMapPage> {
     });
 
     await _flyToLocation(mapbox.Position(lng, lat), zoom: 13);
-    _findNearestBranch();
 
-    if (_nearestFromSearch != null) {
-      await _fetchRoute(
-        [lng, lat],
-        [_nearestFromSearch!.longitude, _nearestFromSearch!.latitude],
-      );
-    }
-  }
+    // ✅ also draw route to true nearest branch
+    if (_filteredBranches.isNotEmpty) {
+      Branch nearest = _filteredBranches.first;
+      double nearestDist = double.infinity;
 
-  void _findNearestBranch() {
-    if (_searchPosition == null || _branches.isEmpty) return;
-
-    Branch? nearest;
-    double nearestDist = double.infinity;
-
-    for (final b in _branches) {
-      final dist = geo.Geolocator.distanceBetween(
-        _searchPosition!.latitude,
-        _searchPosition!.longitude,
-        b.latitude,
-        b.longitude,
-      );
-      if (dist < nearestDist) {
-        nearest = b;
-        nearestDist = dist;
+      for (final b in _filteredBranches) {
+        final dist = geo.Geolocator.distanceBetween(
+          lat, lng,
+          b.latitude, b.longitude,
+        );
+        if (dist < nearestDist) {
+          nearest = b;
+          nearestDist = dist;
+        }
       }
-    }
 
-    if (nearest != null) {
-      setState(() => _nearestFromSearch = nearest);
+      await _drawPolyline(
+        start: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
+        end: mapbox.Point(
+          coordinates: mapbox.Position(nearest.longitude, nearest.latitude),
+        ),
+      );
     }
   }
 
-  Future<void> _fetchRoute(List<double> origin, List<double> destination) async {
-    if (_isFetchingRoute) return;
-    _isFetchingRoute = true;
+mapbox.PointAnnotationManager? _pointAnnotationManager;
+/// ✅ Draw polyline using Mapbox Directions API
+/// ✅ Draw polyline using Mapbox Directions API
+Future<void> _drawPolyline({
+  required mapbox.Point start,
+  required mapbox.Point end,
+}) async {
+  if (_mapboxMap == null) return;
 
-    final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
-    if (mapboxToken.isEmpty) {
-      _isFetchingRoute = false;
+  final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
+  if (mapboxToken.isEmpty) {
+    debugPrint("❌ Mapbox token missing!");
+    return;
+  }
+
+  final url = Uri.parse(
+    "https://api.mapbox.com/directions/v5/mapbox/driving/"
+    "${start.coordinates.lng},${start.coordinates.lat};"
+    "${end.coordinates.lng},${end.coordinates.lat}"
+    "?geometries=geojson&overview=full&access_token=$mapboxToken",
+  );
+
+  try {
+    final res = await http.get(url);
+    if (res.statusCode != 200) {
+      debugPrint("❌ Directions API error: ${res.body}");
       return;
     }
 
-    final url =
-        "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin[0]},${origin[1]};${destination[0]},${destination[1]}"
-        "?geometries=geojson&overview=full&steps=true&access_token=$mapboxToken";
+    final data = jsonDecode(res.body);
+    final coords =
+        (data["routes"][0]["geometry"]["coordinates"] as List).cast<List>();
 
-    try {
-      final res = await http.get(Uri.parse(url));
-      if (!mounted) return;
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final routes = (data["routes"] as List<dynamic>? ?? []);
-        if (routes.isEmpty) {
-          debugPrint("No routes returned by Directions API");
-          return;
-        }
-        final route = routes.first;
-        final coords = (route["geometry"]["coordinates"] as List)
-            .map<List<double>>((c) => [c[0] * 1.0, c[1] * 1.0])
-            .toList();
+    final routePoints = coords
+        .map((c) => mapbox.Position(c[0].toDouble(), c[1].toDouble()))
+        .toList();
 
-        // 👇 Force append destination so line reaches branch
-        coords.add([destination[0], destination[1]]);
-
-        setState(() {
-          _routeCoordinates = coords;
-        });
-        await _drawRouteOnMap();
-        await _fitCameraToRoute();
-      } else {
-        debugPrint("Directions error: ${res.statusCode} ${res.body}");
-      }
-    } catch (e) {
-      debugPrint("Error fetching route: $e");
-    } finally {
-      _isFetchingRoute = false;
-    }
-  }
-
-  Future<void> _drawRouteOnMap() async {
-    if (_mapboxMap == null || _routeCoordinates.isEmpty) return;
-
-    final routeData = {
-      "type": "FeatureCollection",
-      "features": [
-        {
-          "type": "Feature",
-          "geometry": {
-            "type": "LineString",
-            "coordinates": _routeCoordinates,
-          },
-        }
-      ]
-    };
-
-    final style = _mapboxMap!.style;
-
-    try {
-      final exists = await style.styleSourceExists(_routeSourceId);
-      if (!exists) {
-        final source = mapbox.GeoJsonSource(
-          id: _routeSourceId,
-          data: jsonEncode(routeData),
-        );
-        await style.addSource(source);
-
-        final layer = mapbox.LineLayer(
-          id: _routeLayerId,
-          sourceId: _routeSourceId,
-          lineColor: Colors.blue.value,
-          lineWidth: 5.0,
-          lineCap: mapbox.LineCap.ROUND,
-          lineJoin: mapbox.LineJoin.ROUND,
-        );
-        await style.addLayer(layer);
-      } else {
-        await style.removeStyleLayer(_routeLayerId);
-        await style.removeStyleSource(_routeSourceId);
-
-        final source = mapbox.GeoJsonSource(
-          id: _routeSourceId,
-          data: jsonEncode(routeData),
-        );
-        await style.addSource(source);
-
-        final layer = mapbox.LineLayer(
-          id: _routeLayerId,
-          sourceId: _routeSourceId,
-          lineColor: Colors.blue.value,
-          lineWidth: 5.0,
-          lineCap: mapbox.LineCap.ROUND,
-          lineJoin: mapbox.LineJoin.ROUND,
-        );
-        await style.addLayer(layer);
-      }
-    } catch (e) {
-      debugPrint("Error drawing route: $e");
-    }
-  }
-
-  Future<void> _fitCameraToRoute() async {
-    if (_mapboxMap == null || _routeCoordinates.isEmpty) return;
-
-    double minLng = _routeCoordinates.first[0];
-    double maxLng = _routeCoordinates.first[0];
-    double minLat = _routeCoordinates.first[1];
-    double maxLat = _routeCoordinates.first[1];
-
-    for (final c in _routeCoordinates) {
-      final lng = c[0];
-      final lat = c[1];
-      if (lng < minLng) minLng = lng;
-      if (lng > maxLng) maxLng = lng;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
+    if (routePoints.isEmpty) {
+      debugPrint("❌ No route points found");
+      return;
     }
 
-    final bounds = mapbox.CoordinateBounds(
-      southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
-      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
-      infiniteBounds: false,
+    // ✅ Get route distance (in km)
+    final distanceMeters = (data["routes"][0]["distance"] ?? 0).toDouble();
+    final distanceKm = (distanceMeters / 1000).toStringAsFixed(1);
+
+    // ✅ Find middle point of route
+    final midIndex = (routePoints.length / 2).floor();
+    final midPoint = mapbox.Point(coordinates: routePoints[midIndex]);
+
+    // ✅ Clear old annotations
+    _polylineManager ??=
+        await _mapboxMap!.annotations.createPolylineAnnotationManager();
+    await _polylineManager!.deleteAll();
+
+    _pointAnnotationManager ??=
+        await _mapboxMap!.annotations.createPointAnnotationManager();
+    await _pointAnnotationManager!.deleteAll();
+
+    // ✅ Draw polyline
+    await _polylineManager!.create(
+      mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: routePoints),
+        lineColor: 0xFF0255C2,
+        lineWidth: 4.0,
+        lineOpacity: 0.9,
+      ),
     );
 
-    final padding = mapbox.MbxEdgeInsets(
-      top: 60,
-      left: 40,
-      bottom: 60,
-      right: 40,
+    // ✅ Add "You are here" marker
+    await _pointAnnotationManager!.create(
+      mapbox.PointAnnotationOptions(
+        geometry: start,
+        iconImage: "marker-15",
+        iconSize: 1.5,
+        textField: "You are here",
+        textColor: Colors.blue.value,
+        textHaloColor: Colors.white.value,
+        textHaloWidth: 2,
+        textSize: 14,
+        textOffset: [0, -2],
+      ),
     );
 
-    try {
-      final cam = await _mapboxMap!.cameraForCoordinateBounds(
-        bounds,
-        padding,
-        0.0,
-        0.0,
-        null,
-        null,
-      );
-      await _mapboxMap!.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
-    } catch (e) {
-      final midLng = (minLng + maxLng) / 2.0;
-      final midLat = (minLat + maxLat) / 2.0;
-      await _flyToLocation(mapbox.Position(midLng, midLat), zoom: 12);
+    // ✅ Add distance label in the middle of the route
+    await _pointAnnotationManager!.create(
+      mapbox.PointAnnotationOptions(
+        geometry: midPoint,
+        iconSize: 1.2,
+        textField: "$distanceKm km",
+        textColor: Colors.black.value,
+        textHaloColor: Colors.white.value,
+        textHaloWidth: 3,
+        textSize: 16, // bigger text for readability
+        textOffset: [0, -1.5],
+      ),
+    );
+
+    // ✅ Add branch marker (end point)
+    await _pointAnnotationManager!.create(
+      mapbox.PointAnnotationOptions(
+        geometry: end,
+        iconImage: "marker-15",
+        iconSize: 1.5,
+      ),
+    );
+
+    debugPrint("✅ Route polyline + markers + distance label drawn!");
+  } catch (e) {
+    debugPrint("❌ Error fetching route: $e");
+  }
+}
+
+
+
+
+  Future<void> _clearPolyline() async {
+    if (_polylineManager != null) {
+      await _polylineManager!.deleteAll();
     }
   }
 
-  void _listenBranches() {
-    FirebaseFirestore.instance.collection('branches').snapshots().listen(
-      (snapshot) {
-        final branches = snapshot.docs.map((doc) {
-          return Branch.fromJson({'id': doc.id, ...doc.data()});
-        }).toList();
 
-        setState(() => _branches = branches);
-      },
-      onError: (e) => debugPrint("Error fetching branches: $e"),
-    );
-  }
-
+  /// ✅ Filtering only
   List<Branch> get _filteredBranches {
-    final query = _searchQuery.trim().toLowerCase();
+    var filteredBranches = [..._branches];
+
+    if (_selectedServiceIds.isNotEmpty) {
+      filteredBranches = filteredBranches
+          .where((b) => b.services.any((s) => _selectedServiceIds.contains(s)))
+          .toList();
+    }
+
+    if (_forceViewAll) return filteredBranches;
 
     if (_searchPosition != null) {
-      var filtered = _branches.where((b) {
-        final searchable = "${b.name} ${b.address}".toLowerCase();
-        return searchable.contains(query);
+      const double searchRadius = 20000; // 20 km
+      final nearby = filteredBranches.where((b) {
+        final dist = geo.Geolocator.distanceBetween(
+          _searchPosition!.latitude,
+          _searchPosition!.longitude,
+          b.latitude,
+          b.longitude,
+        );
+        return dist <= searchRadius;
       }).toList();
 
-      if (filtered.isEmpty && _nearestFromSearch != null) {
-        return [_nearestFromSearch!];
+      if (nearby.isEmpty && filteredBranches.isNotEmpty) {
+        Branch? nearest;
+        double nearestDist = double.infinity;
+        for (final b in filteredBranches) {
+          final dist = geo.Geolocator.distanceBetween(
+            _searchPosition!.latitude,
+            _searchPosition!.longitude,
+            b.latitude,
+            b.longitude,
+          );
+          if (dist < nearestDist) {
+            nearest = b;
+            nearestDist = dist;
+          }
+        }
+        return nearest != null ? [nearest] : [];
       }
-      return filtered;
+
+      return nearby;
     }
 
     if (_showNearbyOnly && _userPosition != null) {
-      var nearby = _branches.where((b) {
+      final nearby = filteredBranches.where((b) {
         final distance = geo.Geolocator.distanceBetween(
           _userPosition!.latitude,
           _userPosition!.longitude,
           b.latitude,
           b.longitude,
         );
-        return distance <= 10000;
+        return distance <= 10000; // 10 km
       }).toList();
 
-      nearby.sort((a, b) {
-        final distA = geo.Geolocator.distanceBetween(
-          _userPosition!.latitude,
-          _userPosition!.longitude,
-          a.latitude,
-          a.longitude,
-        );
-        final distB = geo.Geolocator.distanceBetween(
-          _userPosition!.latitude,
-          _userPosition!.longitude,
-          b.latitude,
-          b.longitude,
-        );
-        return distA.compareTo(distB);
-      });
+      if (nearby.isEmpty && filteredBranches.isNotEmpty) {
+        Branch? nearest;
+        double nearestDist = double.infinity;
+        for (final b in filteredBranches) {
+          final dist = geo.Geolocator.distanceBetween(
+            _userPosition!.latitude,
+            _userPosition!.longitude,
+            b.latitude,
+            b.longitude,
+          );
+          if (dist < nearestDist) {
+            nearest = b;
+            nearestDist = dist;
+          }
+        }
+        return nearest != null ? [nearest] : [];
+      }
+
       return nearby;
     }
 
-    var sorted = [..._branches];
-    sorted.sort((a, b) {
-      final nameA =
-          a.name.replaceFirst(RegExp(r'^PCC\\s*', caseSensitive: false), '');
-      final nameB =
-          b.name.replaceFirst(RegExp(r'^PCC\\s*', caseSensitive: false), '');
-      return nameA.compareTo(nameB);
+    return filteredBranches;
+  }
+
+  bool get _shouldShowNoBranchBanner {
+    if (_searchPosition == null) return false;
+
+    const double searchRadius = 20000;
+    final hasNearby = _branches.any((b) {
+      final dist = geo.Geolocator.distanceBetween(
+        _searchPosition!.latitude,
+        _searchPosition!.longitude,
+        b.latitude,
+        b.longitude,
+      );
+      return dist <= searchRadius;
     });
-    return sorted;
+
+    return !hasNearby;
   }
 
   RichText highlightText(String text, String query, {TextStyle? style}) {
@@ -1100,13 +623,14 @@ class _BranchMapPageState extends State<BranchMapPage> {
         surfaceTintColor: Colors.transparent,
         title: Row(
           children: [
-            Image.asset('assets/PCCSUS.png', height: 40),
-            const SizedBox(width: 8),
+            Image.asset('assets/PCCSUS.png', height: 32),
+            const SizedBox(width: 6),
             const Text(
               "PCC SUPP",
               style: TextStyle(
                 color: Color(0xFF0255C2),
                 fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
           ],
@@ -1125,228 +649,285 @@ class _BranchMapPageState extends State<BranchMapPage> {
           children: [
             Column(
               children: [
-                // header texts...
                 const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Find Your Nearest",
-                          style: TextStyle(
-                              fontSize: 30, fontWeight: FontWeight.bold)),
-                      SizedBox(height: 8),
-                      Text(
-                        "PCC SUPP",
-                        style: TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF0255C2),
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        "Bringing quality healthcare closer to you...",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Color(0xFF242323),
-                          fontWeight: FontWeight.w600,
-                          fontStyle: FontStyle.italic,
-                          height: 1.4,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Find Your Nearest",
+                                style: TextStyle(
+                                    fontSize: 22, fontWeight: FontWeight.bold)),
+                            SizedBox(height: 4),
+                            Text(
+                              "PCC SUPP",
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF0255C2),
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              "Bringing quality healthcare closer to you...",
+                              textAlign: TextAlign.left,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF242323),
+                                fontWeight: FontWeight.w500,
+                                fontStyle: FontStyle.italic,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-
-                // buttons row
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: ActionButtons(
-                    onToggle: () async {
-                      if (_showNearbyOnly) {
-                        setState(() {
-                          _showNearbyOnly = false;
-                          _searchPosition = null;
-                          _nearestFromSearch = null;
-                        });
-                      } else {
-                        await _flyToUserLocation();
-                      }
-                    },
-                    onViewAll: () {
-                      setState(() {
-                        _showNearbyOnly = false;
-                        _searchPosition = null;
-                        _nearestFromSearch = null;
-                      });
-                    },
-                    isNearbyMode: _showNearbyOnly,
-                    isLoading: _isSearching,
-                    nearbyCount: _filteredBranches.length,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // search field + suggestions
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Row(
                     children: [
-                      TextField(
-                        decoration: InputDecoration(
-                          hintText: "Search branch or place...",
-                          prefixIcon: const Icon(Icons.search,
-                              color: Color(0xFF0255C2)),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide:
-                                BorderSide(color: Colors.grey.shade300),
-                          ),
-                          filled: true,
-                          fillColor: Colors.white,
+                      Expanded(
+                        child: ActionButtons(
+                          onToggleNearby: () async {
+                            await _flyToUserLocation();
+                          },
+                          onToggleAll: () {
+                            setState(() {
+                              _showNearbyOnly = false;
+                              _searchPosition = null;
+                              _userPosition = null;
+                              _forceViewAll = true;
+                              _clearPolyline();
+                            });
+                          },
+                          isNearbyMode: _showNearbyOnly,
+                          isLoading: _isSearching,
+                          nearbyCount: _filteredBranches.length,
                         ),
-                        onChanged: (val) {
-                          if (_debounce?.isActive ?? false) _debounce!.cancel();
-                          _debounce = Timer(const Duration(milliseconds: 400),
-                              () => _fetchSuggestions(val));
-                          setState(() => _searchQuery = val);
+                      ),
+                      const SizedBox(width: 8),
+                      ServiceFilterButton(
+                        selectedServices: _selectedServiceIds,
+                        onApply: (newSelected) {
+                          setState(() {
+                            _selectedServiceIds = newSelected;
+                          });
                         },
                       ),
-                      if (_suggestions.isNotEmpty)
-                        Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: const [
-                              BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2))
-                            ],
-                          ),
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: _suggestions.length,
-                            itemBuilder: (context, i) {
-                              final suggestion = _suggestions[i];
-                              return ListTile(
-                                title: Text(suggestion["place"]),
-                                onTap: () => _selectSuggestion(suggestion),
-                              );
-                            },
-                          ),
-                        ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-
-                // 👇 Expanded prevents overflow
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: SearchField(
+                    controller: _searchController,
+                    hintText: "Enter Your Location",
+                    onFetchSuggestions: _fetchSuggestions,
+                    onSuggestionSelected: _selectSuggestion,
+                  ),
+                ),
+                const SizedBox(height: 4),
                 Expanded(
                   child: Stack(
                     children: [
-                      Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: ToggleChips(
-                                showMap: _showMap,
-                                onToggle: (val) {
-                                  FocusScope.of(context).unfocus();
-                                  setState(() => _showMap = val);
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: Stack(
-                              children: [
-                                Offstage(
-                                  offstage: !_showMap,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 8),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: mapbox.MapWidget(
-                                        key: const ValueKey("mapbox"),
-                                        styleUri:
-                                            "mapbox://styles/salam17/cmfkq2hqe006u01sd3ig62gz0",
-                                        cameraOptions: mapbox.CameraOptions(
-                                          center: _branches.isNotEmpty
-                                              ? mapbox.Point(
-                                                  coordinates: mapbox.Position(
-                                                    _branches.first.longitude,
-                                                    _branches.first.latitude,
-                                                  ),
-                                                )
-                                              : mapbox.Point(
-                                                  coordinates: mapbox.Position(
-                                                    120.9842,
-                                                    14.5995,
-                                                  ),
-                                                ),
-                                          zoom: 12,
+                      Offstage(
+                        offstage: !_showMap,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: mapbox.MapWidget(
+                              key: const ValueKey("mapbox"),
+                              styleUri:
+                                  "mapbox://styles/salam17/cmfkq2hqe006u01sd3ig62gz0",
+                              cameraOptions: mapbox.CameraOptions(
+                                center: _branches.isNotEmpty
+                                    ? mapbox.Point(
+                                        coordinates: mapbox.Position(
+                                          _branches.first.longitude,
+                                          _branches.first.latitude,
                                         ),
-                                        onMapCreated: (map) async {
-                                          _mapboxMap = map;
-                                        },
+                                      )
+                                    : mapbox.Point(
+                                        coordinates: mapbox.Position(
+                                          120.9842,
+                                          14.5995,
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                ),
-                                Offstage(
-                                  offstage: _showMap,
-                                  child: bl.BranchList(
-                                    branches: _filteredBranches,
-                                    allBranches: _branches,
-                                    userPosition: _userPosition,
-                                    searchPosition: _searchPosition,
-                                    searchQuery: _searchQuery,
-                                    highlightTextBuilder: highlightText,
-                                    onSelect: (branch) async {
-                                      if (_mapboxMap != null) {
-                                        await _flyToLocation(
-                                          mapbox.Position(
-                                            branch.longitude,
-                                            branch.latitude,
-                                          ),
-                                          zoom: 14,
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
-                              ],
+                                zoom: 12,
+                              ),
+                              onMapCreated: (map) async {
+                                _mapboxMap = map;
+                              },
                             ),
                           ),
-                        ],
+                        ),
+                      ),
+                      Offstage(
+                        offstage: _showMap,
+                        child: bl.BranchList(
+                          allBranches: _filteredBranches,
+                          userPosition: _userPosition,
+                          searchPosition: _searchPosition,
+                          searchQuery: _searchQuery,
+                          selectedServiceIds: _selectedServiceIds,
+                          highlightTextBuilder: highlightText,
+                          onSelect: (branch) async {
+                            if (_mapboxMap != null) {
+                              final startPos = _searchPosition != null
+                                  ? mapbox.Point(
+                                      coordinates: mapbox.Position(
+                                        _searchPosition!.longitude,
+                                        _searchPosition!.latitude,
+                                      ),
+                                    )
+                                  : _userPosition != null
+                                      ? mapbox.Point(
+                                          coordinates: mapbox.Position(
+                                            _userPosition!.longitude,
+                                            _userPosition!.latitude,
+                                          ),
+                                        )
+                                      : null;
+
+                              final endPos = mapbox.Point(
+                                coordinates: mapbox.Position(
+                                    branch.longitude, branch.latitude),
+                              );
+
+                              await _flyToLocation(
+                                mapbox.Position(
+                                    branch.longitude, branch.latitude),
+                                zoom: 14,
+                              );
+
+                              if (startPos != null) {
+                                await _drawPolyline(
+                                    start: startPos, end: endPos);
+                              }
+                            }
+                          },
+                        ),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ToggleChips(
+                    showMap: _showMap,
+                    onToggle: (val) {
+                      FocusScope.of(context).unfocus();
+                      setState(() => _showMap = val);
+                    },
+                  ),
+                ),
+              ),
+            ),
+            if (!_isOnline)
+              Positioned(
+                top: 10,
+                left: 20,
+                right: 20,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      )
+                    ],
+                  ),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.wifi_off, color: Colors.white, size: 22),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "No internet connection. Some features may not work.",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (_shouldShowNoBranchBanner)
+              IgnorePointer(
+                ignoring: true,
+                child: Positioned(
+                  top: 60,
+                  left: 20,
+                  right: 20,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0255C2),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.sentiment_dissatisfied,
+                            color: Colors.white, size: 22),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "Sorry, no branches were found in this area 💙",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             if (_isSearching)
               Positioned.fill(
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
                   child: Container(
-                    color: Colors.black.withValues(alpha: 0.25),
+                    color: Colors.black26,
                     child: const Center(
-                      child: SizedBox(
-                        height: 60,
-                        width: 60,
-                        child: Image(
-                          image: AssetImage('assets/PCCSUS.png'),
-                          fit: BoxFit.contain,
-                        ),
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF0255C2),
                       ),
                     ),
                   ),

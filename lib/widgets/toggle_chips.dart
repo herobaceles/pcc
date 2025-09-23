@@ -1,61 +1,5 @@
 import 'package:flutter/material.dart';
 
-class SearchWithToggle extends StatelessWidget {
-  final TextEditingController controller;
-  final bool showMap;
-  final ValueChanged<bool> onToggle;
-  final ValueChanged<String> onChanged;
-  final VoidCallback? onSubmitted;
-
-  const SearchWithToggle({
-    super.key,
-    required this.controller,
-    required this.showMap,
-    required this.onToggle,
-    required this.onChanged,
-    this.onSubmitted,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Search bar full width
-        SizedBox(
-          height: 44,
-          child: TextField(
-            controller: controller,
-            onChanged: onChanged,
-            onSubmitted: (_) => onSubmitted?.call(),
-            decoration: InputDecoration(
-              hintText: "Search branches",
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Colors.grey),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-              suffixIcon: const Icon(Icons.search),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        // Toggle buttons below search
-        Center(
-          child: ToggleChips(
-            showMap: showMap,
-            onToggle: onToggle,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class ToggleChips extends StatelessWidget {
   final bool showMap;
   final ValueChanged<bool> onToggle;
@@ -64,23 +8,41 @@ class ToggleChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildButton(
-          icon: Icons.list,
-          label: "List",
-          selected: !showMap,
-          onTap: () => onToggle(false),
-        ),
-        const SizedBox(width: 16),
-        _buildButton(
-          icon: Icons.map,
-          label: "Map",
-          selected: showMap,
-          onTap: () => onToggle(true),
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildButton(
+              icon: Icons.list,
+              label: "List",
+              selected: !showMap,
+              onTap: () => onToggle(false),
+              isLeft: true,
+            ),
+          ),
+          Expanded(
+            child: _buildButton(
+              icon: Icons.map,
+              label: "Map",
+              selected: showMap,
+              onTap: () => onToggle(true),
+              isLeft: false,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -89,17 +51,26 @@ class ToggleChips extends StatelessWidget {
     required String label,
     required bool selected,
     required VoidCallback onTap,
+    required bool isLeft,
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF0255C2) : Colors.white,
+          borderRadius: BorderRadius.horizontal(
+            left: isLeft ? const Radius.circular(30) : Radius.zero,
+            right: !isLeft ? const Radius.circular(30) : Radius.zero,
+          ),
+        ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
-              size: 20,
-              color: selected ? const Color(0xFF0255C2) : Colors.black87,
+              size: 22,
+              color: selected ? Colors.white : const Color(0xFF0255C2),
             ),
             const SizedBox(width: 6),
             Text(
@@ -107,7 +78,7 @@ class ToggleChips extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: selected ? const Color(0xFF0255C2) : Colors.black87,
+                color: selected ? Colors.white : const Color(0xFF0255C2),
               ),
             ),
           ],

@@ -32,10 +32,10 @@ dependencies:
 
   # HTTP client
   http: ^1.1.0
-
+  connectivity_plus: ^6.0.3
   # Huawei Location (optional)
-  huawei_location: ^6.11.0+300
-
+  huawei_location: ^6.11.0+300  # latest HMS location plugin
+  
   # Environment variables
   flutter_dotenv: ^6.0.0
 

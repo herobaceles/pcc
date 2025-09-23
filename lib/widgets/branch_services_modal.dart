@@ -21,7 +21,8 @@ class BranchServicesModal extends StatefulWidget {
 
 class _BranchServicesModalState extends State<BranchServicesModal> {
   String _searchQuery = "";
-  late final Stream<QuerySnapshot> _servicesStream; // ✅ Cached stream
+  late final Stream<QuerySnapshot> _servicesStream;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -45,11 +46,11 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
           child: Material(
             color: Colors.transparent,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(20), // ✅ Rounded modal
+              borderRadius: BorderRadius.circular(20),
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20), // ✅ Same radius
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black26,
@@ -62,7 +63,6 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
                   stream: _servicesStream,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      // ✅ Branded loader with blur
                       return Stack(
                         children: [
                           Positioned.fill(
@@ -103,7 +103,6 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
 
                     final allServices = snapshot.data!.docs;
 
-                    // 🔎 Apply search filter locally
                     final filteredServices = allServices.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final name =
@@ -141,20 +140,25 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
                             ),
                           ),
 
-                          // Search bar
+                          // ✅ Integrated reusable SearchField
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                             child: SearchField(
+                              controller: _searchController,
                               hintText: "Search services...",
-                              onChanged: (value) {
-                                setState(() => _searchQuery = value);
+                              onFetchSuggestions: (query) async {
+                                setState(() => _searchQuery = query);
+                                return []; // no remote suggestions here
+                              },
+                              onSuggestionSelected: (suggestion) {
+                                // not needed in this modal
                               },
                             ),
                           ),
 
                           const Divider(height: 1),
 
-                          // Services list area
+                          // Services list
                           Expanded(
                             child: filteredServices.isEmpty
                                 ? const Center(
@@ -189,7 +193,6 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
     );
   }
 
-  /// ✅ Keeps modal at fixed height even if empty
   Widget _buildFixedHeight({required Widget child}) {
     return SizedBox(
       height: 600,
@@ -205,7 +208,7 @@ class _BranchServicesModalState extends State<BranchServicesModal> {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12), // ✅ Rounded cards
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black12,
