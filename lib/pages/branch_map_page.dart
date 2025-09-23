@@ -540,57 +540,57 @@ Future<void> _clearPolyline() async {
 
 
   /// ✅ Filtering only
-  /// ✅ Filtering only
 List<Branch> get _filteredBranches {
   var filteredBranches = [..._branches];
 
+  // ✅ Apply service filters first
   if (_selectedServiceIds.isNotEmpty) {
-  filteredBranches = filteredBranches.where((b) {
-    final matchesAll = _selectedServiceIds.every((sid) =>
-        b.services.contains(sid) || b.serviceNames.contains(sid));
-    return matchesAll;
-  }).toList();
-}
-
+    filteredBranches = filteredBranches.where((b) {
+      final matchesAll = _selectedServiceIds.every((sid) =>
+          b.services.contains(sid) || b.serviceNames.contains(sid));
+      return matchesAll;
+    }).toList();
+  }
 
   if (_forceViewAll) return filteredBranches;
 
+  // ✅ Case 1: User searched a location
   if (_searchPosition != null) {
-  const double searchRadius = 20000; // 20 km
-  var nearby = filteredBranches.where((b) {
-    final dist = geo.Geolocator.distanceBetween(
-      _searchPosition!.latitude,
-      _searchPosition!.longitude,
-      b.latitude,
-      b.longitude,
-    );
-    return dist <= searchRadius;
-  }).toList();
-
-  // If none found in radius, just return ALL branches sorted by distance
-  if (nearby.isEmpty && filteredBranches.isNotEmpty) {
-    filteredBranches.sort((a, b) {
-      final da = geo.Geolocator.distanceBetween(
-        _searchPosition!.latitude,
-        _searchPosition!.longitude,
-        a.latitude,
-        a.longitude,
-      );
-      final db = geo.Geolocator.distanceBetween(
+    const double searchRadius = 20000; // 20 km radius around searched point
+    var nearby = filteredBranches.where((b) {
+      final dist = geo.Geolocator.distanceBetween(
         _searchPosition!.latitude,
         _searchPosition!.longitude,
         b.latitude,
         b.longitude,
       );
-      return da.compareTo(db);
-    });
-    return filteredBranches; // 👈 keep ALL, not only 1 nearest
+      return dist <= searchRadius;
+    }).toList();
+
+    // ✅ If branches exist inside this location → show them only
+    if (nearby.isNotEmpty) {
+      return nearby;
+    }
+
+    // ✅ If no branch in that location → show 1 nearest branch only
+    Branch? nearest;
+    double nearestDist = double.infinity;
+    for (final b in filteredBranches) {
+      final dist = geo.Geolocator.distanceBetween(
+        _searchPosition!.latitude,
+        _searchPosition!.longitude,
+        b.latitude,
+        b.longitude,
+      );
+      if (dist < nearestDist) {
+        nearest = b;
+        nearestDist = dist;
+      }
+    }
+    return nearest != null ? [nearest] : [];
   }
 
-  return nearby;
-}
-
-
+  // ✅ Case 2: Nearby mode (based on user location)
   if (_showNearbyOnly && _userPosition != null) {
     final nearby = filteredBranches.where((b) {
       final distance = geo.Geolocator.distanceBetween(
@@ -602,29 +602,32 @@ List<Branch> get _filteredBranches {
       return distance <= 10000; // 10 km
     }).toList();
 
-    if (nearby.isEmpty && filteredBranches.isNotEmpty) {
-      Branch? nearest;
-      double nearestDist = double.infinity;
-      for (final b in filteredBranches) {
-        final dist = geo.Geolocator.distanceBetween(
-          _userPosition!.latitude,
-          _userPosition!.longitude,
-          b.latitude,
-          b.longitude,
-        );
-        if (dist < nearestDist) {
-          nearest = b;
-          nearestDist = dist;
-        }
-      }
-      return nearest != null ? [nearest] : [];
+    if (nearby.isNotEmpty) {
+      return nearby;
     }
 
-    return nearby;
+    // If no nearby → return only 1 nearest branch
+    Branch? nearest;
+    double nearestDist = double.infinity;
+    for (final b in filteredBranches) {
+      final dist = geo.Geolocator.distanceBetween(
+        _userPosition!.latitude,
+        _userPosition!.longitude,
+        b.latitude,
+        b.longitude,
+      );
+      if (dist < nearestDist) {
+        nearest = b;
+        nearestDist = dist;
+      }
+    }
+    return nearest != null ? [nearest] : [];
   }
 
+  // ✅ Default: return all
   return filteredBranches;
 }
+
 
 
 
@@ -683,21 +686,21 @@ List<Branch> get _filteredBranches {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      endDrawer: const AppDrawer(),
+      endDrawer: const AppInfoDialog(),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         title: Row(
           children: [
-            Image.asset('assets/PCCSUS.png', height: 32),
-            const SizedBox(width: 6),
+            Image.asset('assets/PCCSUS.png', height: 33),
+            const SizedBox(width: 7),
             const Text(
               "PCC SUPP",
               style: TextStyle(
                 color: Color(0xFF0255C2),
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 25,
               ),
             ),
           ],
@@ -705,7 +708,8 @@ List<Branch> get _filteredBranches {
         actions: [
           Builder(
             builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Color(0xFF0255C2)),
+              icon: const Icon(Icons.info_outline, color: Color(0xFF0255C2)),
+
               onPressed: () => Scaffold.of(context).openEndDrawer(),
             ),
           ),

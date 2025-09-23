@@ -42,7 +42,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
             // Tagline text
             Text(
-              "PCC NUMBAWAN",
+              "PCC SUPP",
               style: TextStyle(
                 fontSize: 22, // larger text
                 fontWeight: FontWeight.bold,
