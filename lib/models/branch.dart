@@ -8,7 +8,8 @@ class Branch {
   final double longitude;
   final String contact;
   final String email;
-  final List<String> services; // stores service IDs available in this branch
+  final List<String> services;      // service IDs
+  final List<String> serviceNames;  // service names
 
   Branch({
     required this.id,
@@ -19,26 +20,27 @@ class Branch {
     required this.contact,
     required this.email,
     this.services = const [],
+    this.serviceNames = const [],
   });
 
-  /// For JSON imports (e.g., APIs)
+  /// ✅ Safe JSON factory (avoids null crashes)
   factory Branch.fromJson(Map<String, dynamic> json) {
     return Branch(
-      id: json['id'],
-      name: json['name'],
-      address: json['address'],
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-      contact: json['contact'],
-      email: json['email'],
-      // services usually injected later by BranchService
-      services: List<String>.from(json['services'] ?? []),
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      address: json['address'] ?? '',
+      latitude: (json['latitude'] ?? 0).toDouble(),
+      longitude: (json['longitude'] ?? 0).toDouble(),
+      contact: json['contact'] ?? '',
+      email: json['email'] ?? '',
+      services: List<String>.from(json['services'] ?? const []),
+      serviceNames: List<String>.from(json['serviceNames'] ?? const []),
     );
   }
 
-  /// For Firestore documents
+  /// ✅ Firestore-safe constructor
   factory Branch.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
     return Branch(
       id: doc.id,
       name: data['name'] ?? '',
@@ -47,12 +49,12 @@ class Branch {
       longitude: (data['longitude'] ?? 0).toDouble(),
       contact: data['contact'] ?? '',
       email: data['email'] ?? '',
-      // 🔹 Don’t rely on Firestore here; services will be attached in BranchService
-      services: const [],
+      services: List<String>.from(data['services'] ?? const []),
+      serviceNames: List<String>.from(data['serviceNames'] ?? const []),
     );
   }
 
-  /// Handy copyWith method for updating services after creation
+  /// ✅ Handy copyWith method
   Branch copyWith({
     String? id,
     String? name,
@@ -62,6 +64,7 @@ class Branch {
     String? contact,
     String? email,
     List<String>? services,
+    List<String>? serviceNames,
   }) {
     return Branch(
       id: id ?? this.id,
@@ -72,6 +75,13 @@ class Branch {
       contact: contact ?? this.contact,
       email: email ?? this.email,
       services: services ?? this.services,
+      serviceNames: serviceNames ?? this.serviceNames,
     );
+  }
+
+  /// ✅ For debugging
+  @override
+  String toString() {
+    return 'Branch(id: $id, name: $name, services: $services, serviceNames: $serviceNames)';
   }
 }

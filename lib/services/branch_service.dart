@@ -1,3 +1,4 @@
+// lib/services/branch_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/branch.dart';
 
@@ -40,22 +41,25 @@ class BranchService {
         }
       }
 
-      // 🔹 Build Branch objects with attached services (IDs only for now)
+      // 🔹 Build Branch objects with attached services (IDs + names)
       final branches = branchSnap.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        final attachedServices =
-            (branchServices[doc.id] ?? []).map((s) => s["id"]!).toList();
 
-        if (attachedServices.isEmpty) {
+        final attached = branchServices[doc.id] ?? [];
+        final attachedIds = attached.map((s) => s["id"]!).toList();
+        final attachedNames = attached.map((s) => s["name"]!).toList();
+
+        if (attachedIds.isEmpty) {
           print("❌ Branch ${doc.id} (${data['name']}) has NO services");
         } else {
-          print("🏥 Branch ${doc.id} (${data['name']}) → $attachedServices");
+          print("🏥 Branch ${doc.id} (${data['name']}) → $attachedIds");
         }
 
         return Branch.fromJson({
           'id': doc.id,
           ...data,
-          'services': attachedServices,
+          'services': attachedIds,
+          'serviceNames': attachedNames,
         });
       }).toList();
 

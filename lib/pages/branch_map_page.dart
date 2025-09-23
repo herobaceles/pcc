@@ -17,6 +17,8 @@ import '../widgets/branch_list.dart' as bl;
 import 'app_drawer.dart';
 import '../widgets/search_field.dart';
 import '../widgets/filter_button.dart';
+import '../services/branch_service.dart';
+
 
 class BranchMapPage extends StatefulWidget {
   const BranchMapPage({super.key});
@@ -28,6 +30,7 @@ class BranchMapPage extends StatefulWidget {
 class _BranchMapPageState extends State<BranchMapPage> {
   mapbox.MapboxMap? _mapboxMap;
   mapbox.PolylineAnnotationManager? _polylineManager;
+  mapbox.PointAnnotationManager? _pointAnnotationManager;
 
   List<Branch> _branches = [];
   String _searchQuery = "";
@@ -61,18 +64,13 @@ class _BranchMapPageState extends State<BranchMapPage> {
   }
 
   /// ✅ Listen for Firestore branch updates
-  void _listenBranches() {
-    FirebaseFirestore.instance.collection('branches').snapshots().listen(
-      (snapshot) {
-        final branches = snapshot.docs.map((doc) {
-          return Branch.fromJson({'id': doc.id, ...doc.data()});
-        }).toList();
-
-        setState(() => _branches = branches);
-      },
-      onError: (e) => debugPrint("Error fetching branches: $e"),
-    );
-  }
+void _listenBranches() {
+  BranchService.loadBranches().then((branches) {
+    setState(() => _branches = branches);
+  }).catchError((e) {
+    debugPrint("Error fetching branches: $e");
+  });
+}
 
   /// ✅ Init location
   Future<void> _initUserLocationAndNearbyBranches() async {
@@ -175,7 +173,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
     }
   }
 
-   Future<void> _flyToUserLocation() async {
+  Future<void> _flyToUserLocation() async {
     if (_userPosition == null) {
       await _initUserLocationAndNearbyBranches();
     }
@@ -189,9 +187,17 @@ class _BranchMapPageState extends State<BranchMapPage> {
     });
 
     if (_filteredBranches.isNotEmpty) {
-      await _fitToBounds(_filteredBranches);
+      final positions = _filteredBranches
+          .map((b) => mapbox.Position(b.longitude, b.latitude))
+          .toList();
+      positions.add(mapbox.Position(
+        _userPosition!.longitude,
+        _userPosition!.latitude,
+      ));
 
-      // ✅ also draw route to nearest branch from user location
+      await _fitPositionsBounds(positions);
+
+      // ✅ also draw route to nearest branch
       Branch nearest = _filteredBranches.first;
       double nearestDist = double.infinity;
 
@@ -230,85 +236,95 @@ class _BranchMapPageState extends State<BranchMapPage> {
     );
   }
 
-  Future<void> _fitToBounds(List<Branch> branches) async {
-    if (_mapboxMap == null || branches.isEmpty) return;
+  /// ✅ Generic fit-to-bounds for any positions (user + branches)
+Future<void> _fitPositionsBounds(List<mapbox.Position> positions) async {
+  if (_mapboxMap == null || positions.isEmpty) return;
 
-    final lats = branches.map((b) => b.latitude).toList();
-    final lngs = branches.map((b) => b.longitude).toList();
+  final lats = positions.map((p) => p.lat).toList();
+  final lngs = positions.map((p) => p.lng).toList();
 
-    final minLat = lats.reduce((a, b) => a < b ? a : b);
-    final maxLat = lats.reduce((a, b) => a > b ? a : b);
-    final minLng = lngs.reduce((a, b) => a < b ? a : b);
-    final maxLng = lngs.reduce((a, b) => a > b ? a : b);
+  final minLat = lats.reduce((a, b) => a < b ? a : b);
+  final maxLat = lats.reduce((a, b) => a > b ? a : b);
+  final minLng = lngs.reduce((a, b) => a < b ? a : b);
+  final maxLng = lngs.reduce((a, b) => a > b ? a : b);
 
-    final center = mapbox.Point(
-      coordinates: mapbox.Position(
-        (minLng + maxLng) / 2,
-        (minLat + maxLat) / 2,
-      ),
-    );
-
-    final latDelta = (maxLat - minLat).abs();
-    final lngDelta = (maxLng - minLng).abs();
-    final maxDelta = latDelta > lngDelta ? latDelta : lngDelta;
-
-    double zoom;
-    if (maxDelta < 0.005) {
-      zoom = 15;
-    } else if (maxDelta < 0.05) {
-      zoom = 13;
-    } else if (maxDelta < 0.2) {
-      zoom = 11;
-    } else {
-      zoom = 9;
-    }
-
-    await _mapboxMap!.flyTo(
-      mapbox.CameraOptions(center: center, zoom: zoom),
-      mapbox.MapAnimationOptions(duration: 1200),
-    );
-  }
-
-  /// ✅ Fetch autocomplete suggestions from Mapbox
-  /// ✅ Fetch autocomplete & full address suggestions from Mapbox
-Future<List<Map<String, dynamic>>> _fetchSuggestions(String query) async {
-  if (query.isEmpty) return [];
-
-  final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
-  if (mapboxToken.isEmpty) return [];
-
-  // 🔹 Encode query to handle spaces, commas, special chars
-  final encodedQuery = Uri.encodeComponent(query);
-
-  final url = Uri.parse(
-    "https://api.mapbox.com/geocoding/v5/mapbox.places/$encodedQuery.json"
-    "?access_token=$mapboxToken"
-    "&autocomplete=true"
-    "&limit=7" // increase results
-    "&country=PH"
-    "&types=address,place,region,locality,neighborhood,poi"
+  final center = mapbox.Point(
+    coordinates: mapbox.Position(
+      (minLng + maxLng) / 2,
+      (minLat + maxLat) / 2,
+    ),
   );
 
-  try {
-    final res = await http.get(url);
-    if (!mounted) return [];
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
-      final features = (data["features"] as List<dynamic>? ?? []);
-      return features.map((f) {
-        return {
-          "place": f["place_name"], // full address text
-          "lat": f["geometry"]["coordinates"][1],
-          "lng": f["geometry"]["coordinates"][0],
-        };
-      }).toList();
-    }
-  } catch (e) {
-    debugPrint("❌ Error fetching suggestions: $e");
+  final latDelta = (maxLat - minLat).abs();
+  final lngDelta = (maxLng - minLng).abs();
+  final maxDelta = latDelta > lngDelta ? latDelta : lngDelta;
+
+  // ✅ Dynamic zoom adjustment
+  double zoom;
+  if (maxDelta < 0.002) {
+    zoom = 16; // very close (few blocks)
+  } else if (maxDelta < 0.01) {
+    zoom = 14; // small city area
+  } else if (maxDelta < 0.05) {
+    zoom = 12; // bigger district
+  } else if (maxDelta < 0.2) {
+    zoom = 11; // across a city
+  } else {
+    zoom = 9; // across provinces
   }
-  return [];
+
+  await _mapboxMap!.flyTo(
+    mapbox.CameraOptions(center: center, zoom: zoom),
+    mapbox.MapAnimationOptions(duration: 1200),
+  );
 }
 
+
+  /// ✅ Wrapper for branches
+  Future<void> _fitToBounds(List<Branch> branches) async {
+    if (branches.isEmpty) return;
+    final positions =
+        branches.map((b) => mapbox.Position(b.longitude, b.latitude)).toList();
+    await _fitPositionsBounds(positions);
+  }
+
+  /// ✅ Fetch autocomplete & full address suggestions
+  Future<List<Map<String, dynamic>>> _fetchSuggestions(String query) async {
+    if (query.isEmpty) return [];
+
+    final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
+    if (mapboxToken.isEmpty) return [];
+
+    final encodedQuery = Uri.encodeComponent(query);
+
+    final url = Uri.parse(
+      "https://api.mapbox.com/geocoding/v5/mapbox.places/$encodedQuery.json"
+      "?access_token=$mapboxToken"
+      "&autocomplete=true"
+      "&limit=7"
+      "&country=PH"
+      "&types=address,place,region,locality,neighborhood,poi",
+    );
+
+    try {
+      final res = await http.get(url);
+      if (!mounted) return [];
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final features = (data["features"] as List<dynamic>? ?? []);
+        return features.map((f) {
+          return {
+            "place": f["place_name"],
+            "lat": f["geometry"]["coordinates"][1],
+            "lng": f["geometry"]["coordinates"][0],
+          };
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint("❌ Error fetching suggestions: $e");
+    }
+    return [];
+  }
 
   /// ✅ Handle suggestion select
   Future<void> _selectSuggestion(Map<String, dynamic> suggestion) async {
@@ -333,15 +349,17 @@ Future<List<Map<String, dynamic>>> _fetchSuggestions(String query) async {
 
     await _flyToLocation(mapbox.Position(lng, lat), zoom: 13);
 
-    // ✅ also draw route to true nearest branch
+    // ✅ also draw route to nearest branch
     if (_filteredBranches.isNotEmpty) {
       Branch nearest = _filteredBranches.first;
       double nearestDist = double.infinity;
 
       for (final b in _filteredBranches) {
         final dist = geo.Geolocator.distanceBetween(
-          lat, lng,
-          b.latitude, b.longitude,
+          lat,
+          lng,
+          b.latitude,
+          b.longitude,
         );
         if (dist < nearestDist) {
           nearest = b;
@@ -358,121 +376,123 @@ Future<List<Map<String, dynamic>>> _fetchSuggestions(String query) async {
     }
   }
 
-mapbox.PointAnnotationManager? _pointAnnotationManager;
-/// ✅ Draw polyline using Mapbox Directions API
-/// ✅ Draw polyline using Mapbox Directions API
-Future<void> _drawPolyline({
-  required mapbox.Point start,
-  required mapbox.Point end,
-}) async {
-  if (_mapboxMap == null) return;
+  /// ✅ Draw polyline using Mapbox Directions API
+  Future<void> _drawPolyline({
+    required mapbox.Point start,
+    required mapbox.Point end,
+  }) async {
+    if (_mapboxMap == null) return;
 
-  final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
-  if (mapboxToken.isEmpty) {
-    debugPrint("❌ Mapbox token missing!");
-    return;
-  }
-
-  final url = Uri.parse(
-    "https://api.mapbox.com/directions/v5/mapbox/driving/"
-    "${start.coordinates.lng},${start.coordinates.lat};"
-    "${end.coordinates.lng},${end.coordinates.lat}"
-    "?geometries=geojson&overview=full&access_token=$mapboxToken",
-  );
-
-  try {
-    final res = await http.get(url);
-    if (res.statusCode != 200) {
-      debugPrint("❌ Directions API error: ${res.body}");
+    final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
+    if (mapboxToken.isEmpty) {
+      debugPrint("❌ Mapbox token missing!");
       return;
     }
 
-    final data = jsonDecode(res.body);
-    final coords =
-        (data["routes"][0]["geometry"]["coordinates"] as List).cast<List>();
+    final url = Uri.parse(
+      "https://api.mapbox.com/directions/v5/mapbox/driving/"
+      "${start.coordinates.lng},${start.coordinates.lat};"
+      "${end.coordinates.lng},${end.coordinates.lat}"
+      "?geometries=geojson&overview=full&access_token=$mapboxToken",
+    );
 
-    final routePoints = coords
-        .map((c) => mapbox.Position(c[0].toDouble(), c[1].toDouble()))
-        .toList();
+    try {
+      final res = await http.get(url);
+      if (res.statusCode != 200) {
+        debugPrint("❌ Directions API error: ${res.body}");
+        return;
+      }
 
-    if (routePoints.isEmpty) {
-      debugPrint("❌ No route points found");
-      return;
+      final data = jsonDecode(res.body);
+      final coords =
+          (data["routes"][0]["geometry"]["coordinates"] as List).cast<List>();
+
+      final routePoints = coords
+          .map((c) => mapbox.Position(c[0].toDouble(), c[1].toDouble()))
+          .toList();
+
+      if (routePoints.isEmpty) {
+        debugPrint("❌ No route points found");
+        return;
+      }
+
+      // ✅ Get route distance
+      final distanceMeters = (data["routes"][0]["distance"] ?? 0).toDouble();
+      final distanceKm = (distanceMeters / 1000).toStringAsFixed(1);
+
+      // ✅ Find middle point
+      final midIndex = (routePoints.length / 2).floor();
+      final midPoint = mapbox.Point(coordinates: routePoints[midIndex]);
+
+      // ✅ Clear old
+      _polylineManager ??=
+          await _mapboxMap!.annotations.createPolylineAnnotationManager();
+      await _polylineManager!.deleteAll();
+
+      _pointAnnotationManager ??=
+          await _mapboxMap!.annotations.createPointAnnotationManager();
+      await _pointAnnotationManager!.deleteAll();
+
+      // ✅ Polyline
+      await _polylineManager!.create(
+        mapbox.PolylineAnnotationOptions(
+          geometry: mapbox.LineString(coordinates: routePoints),
+          lineColor: 0xFF0255C2,
+          lineWidth: 4.0,
+          lineOpacity: 0.9,
+        ),
+      );
+
+      // ✅ Start marker
+     await _pointAnnotationManager!.create(
+  mapbox.PointAnnotationOptions(
+    geometry: start,
+    iconImage: "marker-15",
+    iconSize: 1.5,
+    textField: "You are here",
+    textColor: Colors.white.value,
+    textHaloColor: const Color(0xFF0255C2).value,
+    textHaloWidth: 8,
+    textSize: 14,
+    textOffset: [0, -2],
+    textAnchor: mapbox.TextAnchor.TOP, // ✅ fixed
+  ),
+);
+
+
+      // ✅ Distance label at midpoint
+      await _pointAnnotationManager!.create(
+  mapbox.PointAnnotationOptions(
+    geometry: midPoint,
+    iconSize: 1.2,
+    textField: "$distanceKm km",
+    textColor: Colors.white.value,               // white text
+    textHaloColor: const Color(0xFF0255C2).value, // blue background halo
+    textHaloWidth: 6,
+    textSize: 16, // bigger text for readability
+    textOffset: [0, -1.5],
+    textAnchor: mapbox.TextAnchor.TOP, // ✅ correct enum
+  ),
+);
+
+
+      // ✅ End marker
+      await _pointAnnotationManager!.create(
+        mapbox.PointAnnotationOptions(
+          geometry: end,
+          iconImage: "marker-15",
+          iconSize: 1.5,
+        ),
+      );
+
+      // ✅ Zoom out to fit both
+      await _fitPositionsBounds([start.coordinates, end.coordinates]);
+
+      debugPrint("✅ Route polyline + markers + distance drawn!");
+    } catch (e) {
+      debugPrint("❌ Error fetching route: $e");
     }
-
-    // ✅ Get route distance (in km)
-    final distanceMeters = (data["routes"][0]["distance"] ?? 0).toDouble();
-    final distanceKm = (distanceMeters / 1000).toStringAsFixed(1);
-
-    // ✅ Find middle point of route
-    final midIndex = (routePoints.length / 2).floor();
-    final midPoint = mapbox.Point(coordinates: routePoints[midIndex]);
-
-    // ✅ Clear old annotations
-    _polylineManager ??=
-        await _mapboxMap!.annotations.createPolylineAnnotationManager();
-    await _polylineManager!.deleteAll();
-
-    _pointAnnotationManager ??=
-        await _mapboxMap!.annotations.createPointAnnotationManager();
-    await _pointAnnotationManager!.deleteAll();
-
-    // ✅ Draw polyline
-    await _polylineManager!.create(
-      mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: routePoints),
-        lineColor: 0xFF0255C2,
-        lineWidth: 4.0,
-        lineOpacity: 0.9,
-      ),
-    );
-
-    // ✅ Add "You are here" marker
-    await _pointAnnotationManager!.create(
-      mapbox.PointAnnotationOptions(
-        geometry: start,
-        iconImage: "marker-15",
-        iconSize: 1.5,
-        textField: "You are here",
-        textColor: Colors.blue.value,
-        textHaloColor: Colors.white.value,
-        textHaloWidth: 2,
-        textSize: 14,
-        textOffset: [0, -2],
-      ),
-    );
-
-    // ✅ Add distance label in the middle of the route
-    await _pointAnnotationManager!.create(
-      mapbox.PointAnnotationOptions(
-        geometry: midPoint,
-        iconSize: 1.2,
-        textField: "$distanceKm km",
-        textColor: Colors.black.value,
-        textHaloColor: Colors.white.value,
-        textHaloWidth: 3,
-        textSize: 16, // bigger text for readability
-        textOffset: [0, -1.5],
-      ),
-    );
-
-    // ✅ Add branch marker (end point)
-    await _pointAnnotationManager!.create(
-      mapbox.PointAnnotationOptions(
-        geometry: end,
-        iconImage: "marker-15",
-        iconSize: 1.5,
-      ),
-    );
-
-    debugPrint("✅ Route polyline + markers + distance label drawn!");
-  } catch (e) {
-    debugPrint("❌ Error fetching route: $e");
   }
-}
-
-
-
 
   Future<void> _clearPolyline() async {
     if (_polylineManager != null) {
@@ -480,86 +500,91 @@ Future<void> _drawPolyline({
     }
   }
 
-
   /// ✅ Filtering only
-  List<Branch> get _filteredBranches {
-    var filteredBranches = [..._branches];
+  /// ✅ Filtering only
+List<Branch> get _filteredBranches {
+  var filteredBranches = [..._branches];
 
-    if (_selectedServiceIds.isNotEmpty) {
-      filteredBranches = filteredBranches
-          .where((b) => b.services.any((s) => _selectedServiceIds.contains(s)))
-          .toList();
-    }
+  if (_selectedServiceIds.isNotEmpty) {
+  filteredBranches = filteredBranches.where((b) {
+    final matchesAll = _selectedServiceIds.every((sid) =>
+        b.services.contains(sid) || b.serviceNames.contains(sid));
+    return matchesAll;
+  }).toList();
+}
 
-    if (_forceViewAll) return filteredBranches;
 
-    if (_searchPosition != null) {
-      const double searchRadius = 20000; // 20 km
-      final nearby = filteredBranches.where((b) {
+  if (_forceViewAll) return filteredBranches;
+
+  if (_searchPosition != null) {
+    const double searchRadius = 20000; // 20 km
+    final nearby = filteredBranches.where((b) {
+      final dist = geo.Geolocator.distanceBetween(
+        _searchPosition!.latitude,
+        _searchPosition!.longitude,
+        b.latitude,
+        b.longitude,
+      );
+      return dist <= searchRadius;
+    }).toList();
+
+    if (nearby.isEmpty && filteredBranches.isNotEmpty) {
+      Branch? nearest;
+      double nearestDist = double.infinity;
+      for (final b in filteredBranches) {
         final dist = geo.Geolocator.distanceBetween(
           _searchPosition!.latitude,
           _searchPosition!.longitude,
           b.latitude,
           b.longitude,
         );
-        return dist <= searchRadius;
-      }).toList();
-
-      if (nearby.isEmpty && filteredBranches.isNotEmpty) {
-        Branch? nearest;
-        double nearestDist = double.infinity;
-        for (final b in filteredBranches) {
-          final dist = geo.Geolocator.distanceBetween(
-            _searchPosition!.latitude,
-            _searchPosition!.longitude,
-            b.latitude,
-            b.longitude,
-          );
-          if (dist < nearestDist) {
-            nearest = b;
-            nearestDist = dist;
-          }
+        if (dist < nearestDist) {
+          nearest = b;
+          nearestDist = dist;
         }
-        return nearest != null ? [nearest] : [];
       }
-
-      return nearby;
+      return nearest != null ? [nearest] : [];
     }
 
-    if (_showNearbyOnly && _userPosition != null) {
-      final nearby = filteredBranches.where((b) {
-        final distance = geo.Geolocator.distanceBetween(
+    return nearby;
+  }
+
+  if (_showNearbyOnly && _userPosition != null) {
+    final nearby = filteredBranches.where((b) {
+      final distance = geo.Geolocator.distanceBetween(
+        _userPosition!.latitude,
+        _userPosition!.longitude,
+        b.latitude,
+        b.longitude,
+      );
+      return distance <= 10000; // 10 km
+    }).toList();
+
+    if (nearby.isEmpty && filteredBranches.isNotEmpty) {
+      Branch? nearest;
+      double nearestDist = double.infinity;
+      for (final b in filteredBranches) {
+        final dist = geo.Geolocator.distanceBetween(
           _userPosition!.latitude,
           _userPosition!.longitude,
           b.latitude,
           b.longitude,
         );
-        return distance <= 10000; // 10 km
-      }).toList();
-
-      if (nearby.isEmpty && filteredBranches.isNotEmpty) {
-        Branch? nearest;
-        double nearestDist = double.infinity;
-        for (final b in filteredBranches) {
-          final dist = geo.Geolocator.distanceBetween(
-            _userPosition!.latitude,
-            _userPosition!.longitude,
-            b.latitude,
-            b.longitude,
-          );
-          if (dist < nearestDist) {
-            nearest = b;
-            nearestDist = dist;
-          }
+        if (dist < nearestDist) {
+          nearest = b;
+          nearestDist = dist;
         }
-        return nearest != null ? [nearest] : [];
       }
-
-      return nearby;
+      return nearest != null ? [nearest] : [];
     }
 
-    return filteredBranches;
+    return nearby;
   }
+
+  return filteredBranches;
+}
+
+
 
   bool get _shouldShowNoBranchBanner {
     if (_searchPosition == null) return false;
@@ -804,12 +829,6 @@ Future<void> _drawPolyline({
                                     branch.longitude, branch.latitude),
                               );
 
-                              await _flyToLocation(
-                                mapbox.Position(
-                                    branch.longitude, branch.latitude),
-                                zoom: 14,
-                              );
-
                               if (startPos != null) {
                                 await _drawPolyline(
                                     start: startPos, end: endPos);
@@ -878,47 +897,7 @@ Future<void> _drawPolyline({
                 ),
               ),
             if (_shouldShowNoBranchBanner)
-              IgnorePointer(
-                ignoring: true,
-                child: Positioned(
-                  top: 60,
-                  left: 20,
-                  right: 20,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0255C2),
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 4,
-                          offset: Offset(0, 2),
-                        )
-                      ],
-                    ),
-                    child: Row(
-                      children: const [
-                        Icon(Icons.sentiment_dissatisfied,
-                            color: Colors.white, size: 22),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            "Sorry, no branches were found in this area 💙",
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                              height: 1.3,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              const _NoBranchBanner(),
             if (_isSearching)
               Positioned.fill(
                 child: BackdropFilter(
@@ -939,3 +918,155 @@ Future<void> _drawPolyline({
     );
   }
 }
+
+class _NoBranchBanner extends StatefulWidget {
+  const _NoBranchBanner({Key? key}) : super(key: key);
+
+  @override
+  State<_NoBranchBanner> createState() => _NoBranchBannerState();
+}
+
+class _NoBranchBannerState extends State<_NoBranchBanner> {
+  bool _isVisible = true;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start a timer to hide the banner after 3 seconds
+    _timer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _isVisible = false;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nearestBranch = _findNearestBranch(context);
+    
+    return AnimatedOpacity(
+      opacity: _isVisible ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 500),
+      child: IgnorePointer(
+        ignoring: true,
+        child: Positioned(
+          top: 60,
+          left: 20,
+          right: 20,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0255C2),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 8,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "We apologize, but there are no PCC SUPP branches in this immediate area.",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (nearestBranch != null) ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 36),
+                    child: Text(
+                      "Nearest branch: ${nearestBranch.name} (${nearestBranch.distanceText})",
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  _NearestBranchInfo? _findNearestBranch(BuildContext context) {
+    final state = context.findAncestorStateOfType<_BranchMapPageState>();
+    if (state == null || state._searchPosition == null || state._branches.isEmpty) {
+      return null;
+    }
+
+    Branch? nearest;
+    double nearestDist = double.infinity;
+
+    for (final branch in state._branches) {
+      final dist = geo.Geolocator.distanceBetween(
+        state._searchPosition!.latitude,
+        state._searchPosition!.longitude,
+        branch.latitude,
+        branch.longitude,
+      );
+      if (dist < nearestDist) {
+        nearest = branch;
+        nearestDist = dist;
+      }
+    }
+
+    if (nearest == null) return null;
+
+    String distanceText;
+    if (nearestDist < 1000) {
+      distanceText = "${nearestDist.round()}m away";
+    } else {
+      distanceText = "${(nearestDist / 1000).toStringAsFixed(1)}km away";
+    }
+
+    return _NearestBranchInfo(
+      name: nearest.name,
+      distanceText: distanceText,
+    );
+  }
+}
+
+class _NearestBranchInfo {
+  final String name;
+  final String distanceText;
+
+  _NearestBranchInfo({
+    required this.name,
+    required this.distanceText,
+  });
+}
+

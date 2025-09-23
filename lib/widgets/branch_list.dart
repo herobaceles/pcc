@@ -13,7 +13,6 @@ class BranchList extends StatelessWidget {
   final geo.Position? searchPosition;
   final String searchQuery;
   final List<String> selectedServiceIds;
-  final Map<String, String> serviceNames;
   final RichText Function(String, String, {TextStyle? style})
       highlightTextBuilder;
   final ValueChanged<Branch> onSelect;
@@ -25,7 +24,6 @@ class BranchList extends StatelessWidget {
     this.searchPosition,
     this.searchQuery = "",
     this.selectedServiceIds = const [],
-    this.serviceNames = const {},
     required this.highlightTextBuilder,
     required this.onSelect,
   });
@@ -319,26 +317,7 @@ class BranchList extends StatelessWidget {
               ),
             const SizedBox(height: 8),
 
-            // Services
-            if (branch.services.isNotEmpty)
-              Wrap(
-                spacing: 6,
-                runSpacing: -8,
-                children: branch.services.map((sid) {
-                  final name = serviceNames[sid] ?? sid;
-                  return Chip(
-                    label: Text(
-                      name,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    backgroundColor: pccBlue.withOpacity(0.1),
-                    labelStyle: TextStyle(color: pccBlue),
-                  );
-                }).toList(),
-              ),
-            if (branch.services.isNotEmpty) const SizedBox(height: 8),
-
-            // Buttons
+            // Buttons only (no inline services anymore)
             Row(
               children: [
                 Expanded(
