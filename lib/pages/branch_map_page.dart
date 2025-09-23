@@ -63,10 +63,44 @@ class _BranchMapPageState extends State<BranchMapPage> {
     });
   }
 
+ Future<void> _updateBranchMarkers() async {
+  if (_mapboxMap == null) return;
+
+  _pointAnnotationManager ??= 
+      await _mapboxMap!.annotations.createPointAnnotationManager();
+
+  // Clear all existing markers
+  await _pointAnnotationManager!.deleteAll();
+
+  // Add only filtered branch markers
+  for (final branch in _filteredBranches) {  // Use _filteredBranches instead of _branches
+    await _pointAnnotationManager!.create(
+      mapbox.PointAnnotationOptions(
+        geometry: mapbox.Point(
+          coordinates: mapbox.Position(branch.longitude, branch.latitude),
+        ),
+        iconImage: "marker-15",
+        iconSize: 1.5,
+        textField: branch.name,
+        textColor: Colors.black.value,
+        textHaloColor: Colors.white.value,
+        textHaloWidth: 2,
+        textSize: 12,
+        textAnchor: mapbox.TextAnchor.TOP,
+      ),
+    );
+  }
+
+  debugPrint("✅ ${_filteredBranches.length} branch markers updated on map");
+}
+
+
+
   /// ✅ Listen for Firestore branch updates
 void _listenBranches() {
   BranchService.loadBranches().then((branches) {
     setState(() => _branches = branches);
+    _updateBranchMarkers();
   }).catchError((e) {
     debugPrint("Error fetching branches: $e");
   });
@@ -377,128 +411,133 @@ Future<void> _fitPositionsBounds(List<mapbox.Position> positions) async {
   }
 
   /// ✅ Draw polyline using Mapbox Directions API
-  Future<void> _drawPolyline({
-    required mapbox.Point start,
-    required mapbox.Point end,
-  }) async {
-    if (_mapboxMap == null) return;
+ Future<void> _drawPolyline({
+  required mapbox.Point start,
+  required mapbox.Point end,
+}) async {
+  if (_mapboxMap == null) return;
 
-    final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
-    if (mapboxToken.isEmpty) {
-      debugPrint("❌ Mapbox token missing!");
+  final mapboxToken = dotenv.env['mapbox_access_token'] ?? "";
+  if (mapboxToken.isEmpty) {
+    debugPrint("❌ Mapbox token missing!");
+    return;
+  }
+
+  final url = Uri.parse(
+    "https://api.mapbox.com/directions/v5/mapbox/driving/"
+    "${start.coordinates.lng},${start.coordinates.lat};"
+    "${end.coordinates.lng},${end.coordinates.lat}"
+    "?geometries=geojson&overview=full&access_token=$mapboxToken",
+  );
+
+  try {
+    final res = await http.get(url);
+    if (res.statusCode != 200) {
+      debugPrint("❌ Directions API error: ${res.body}");
       return;
     }
 
-    final url = Uri.parse(
-      "https://api.mapbox.com/directions/v5/mapbox/driving/"
-      "${start.coordinates.lng},${start.coordinates.lat};"
-      "${end.coordinates.lng},${end.coordinates.lat}"
-      "?geometries=geojson&overview=full&access_token=$mapboxToken",
+    final data = jsonDecode(res.body);
+    final coords =
+        (data["routes"][0]["geometry"]["coordinates"] as List).cast<List>();
+
+    final routePoints = coords
+        .map((c) => mapbox.Position(c[0].toDouble(), c[1].toDouble()))
+        .toList();
+
+    if (routePoints.isEmpty) {
+      debugPrint("❌ No route points found");
+      return;
+    }
+
+    // ✅ Get route distance
+    final distanceMeters = (data["routes"][0]["distance"] ?? 0).toDouble();
+    final distanceKm = (distanceMeters / 1000).toStringAsFixed(1);
+
+    // ✅ Middle point for label
+    final midIndex = (routePoints.length / 2).floor();
+    final midPoint = mapbox.Point(coordinates: routePoints[midIndex]);
+
+    // ✅ Reuse existing managers
+    _polylineManager ??=
+        await _mapboxMap!.annotations.createPolylineAnnotationManager();
+    _pointAnnotationManager ??=
+        await _mapboxMap!.annotations.createPointAnnotationManager();
+
+    // ✅ Clear ALL old drawings before creating new
+    await _polylineManager!.deleteAll();
+    await _pointAnnotationManager!.deleteAll();
+
+    // ✅ Draw polyline
+    await _polylineManager!.create(
+      mapbox.PolylineAnnotationOptions(
+        geometry: mapbox.LineString(coordinates: routePoints),
+        lineColor: 0xFF0255C2,
+        lineWidth: 4.0,
+        lineOpacity: 0.9,
+      ),
     );
 
-    try {
-      final res = await http.get(url);
-      if (res.statusCode != 200) {
-        debugPrint("❌ Directions API error: ${res.body}");
-        return;
-      }
+    // ✅ Start marker
+    await _pointAnnotationManager!.create(
+      mapbox.PointAnnotationOptions(
+        geometry: start,
+        iconImage: "marker-15",
+        iconSize: 1.5,
+        textField: "You are here",
+        textColor: Colors.white.value,
+        textHaloColor: const Color(0xFF0255C2).value,
+        textHaloWidth: 8,
+        textSize: 14,
+        textOffset: [0, -2],
+        textAnchor: mapbox.TextAnchor.TOP,
+      ),
+    );
 
-      final data = jsonDecode(res.body);
-      final coords =
-          (data["routes"][0]["geometry"]["coordinates"] as List).cast<List>();
+    // ✅ Midpoint distance label
+    await _pointAnnotationManager!.create(
+      mapbox.PointAnnotationOptions(
+        geometry: midPoint,
+        iconSize: 1.2,
+        textField: "$distanceKm km",
+        textColor: Colors.white.value,
+        textHaloColor: const Color(0xFF0255C2).value,
+        textHaloWidth: 6,
+        textSize: 16,
+        textOffset: [0, -1.5],
+        textAnchor: mapbox.TextAnchor.TOP,
+      ),
+    );
 
-      final routePoints = coords
-          .map((c) => mapbox.Position(c[0].toDouble(), c[1].toDouble()))
-          .toList();
+    // ✅ End marker
+    await _pointAnnotationManager!.create(
+      mapbox.PointAnnotationOptions(
+        geometry: end,
+        iconImage: "marker-15",
+        iconSize: 1.5,
+      ),
+    );
 
-      if (routePoints.isEmpty) {
-        debugPrint("❌ No route points found");
-        return;
-      }
+    // ✅ Zoom to fit
+    await _fitPositionsBounds([start.coordinates, end.coordinates]);
 
-      // ✅ Get route distance
-      final distanceMeters = (data["routes"][0]["distance"] ?? 0).toDouble();
-      final distanceKm = (distanceMeters / 1000).toStringAsFixed(1);
-
-      // ✅ Find middle point
-      final midIndex = (routePoints.length / 2).floor();
-      final midPoint = mapbox.Point(coordinates: routePoints[midIndex]);
-
-      // ✅ Clear old
-      _polylineManager ??=
-          await _mapboxMap!.annotations.createPolylineAnnotationManager();
-      await _polylineManager!.deleteAll();
-
-      _pointAnnotationManager ??=
-          await _mapboxMap!.annotations.createPointAnnotationManager();
-      await _pointAnnotationManager!.deleteAll();
-
-      // ✅ Polyline
-      await _polylineManager!.create(
-        mapbox.PolylineAnnotationOptions(
-          geometry: mapbox.LineString(coordinates: routePoints),
-          lineColor: 0xFF0255C2,
-          lineWidth: 4.0,
-          lineOpacity: 0.9,
-        ),
-      );
-
-      // ✅ Start marker
-     await _pointAnnotationManager!.create(
-  mapbox.PointAnnotationOptions(
-    geometry: start,
-    iconImage: "marker-15",
-    iconSize: 1.5,
-    textField: "You are here",
-    textColor: Colors.white.value,
-    textHaloColor: const Color(0xFF0255C2).value,
-    textHaloWidth: 8,
-    textSize: 14,
-    textOffset: [0, -2],
-    textAnchor: mapbox.TextAnchor.TOP, // ✅ fixed
-  ),
-);
-
-
-      // ✅ Distance label at midpoint
-      await _pointAnnotationManager!.create(
-  mapbox.PointAnnotationOptions(
-    geometry: midPoint,
-    iconSize: 1.2,
-    textField: "$distanceKm km",
-    textColor: Colors.white.value,               // white text
-    textHaloColor: const Color(0xFF0255C2).value, // blue background halo
-    textHaloWidth: 6,
-    textSize: 16, // bigger text for readability
-    textOffset: [0, -1.5],
-    textAnchor: mapbox.TextAnchor.TOP, // ✅ correct enum
-  ),
-);
-
-
-      // ✅ End marker
-      await _pointAnnotationManager!.create(
-        mapbox.PointAnnotationOptions(
-          geometry: end,
-          iconImage: "marker-15",
-          iconSize: 1.5,
-        ),
-      );
-
-      // ✅ Zoom out to fit both
-      await _fitPositionsBounds([start.coordinates, end.coordinates]);
-
-      debugPrint("✅ Route polyline + markers + distance drawn!");
-    } catch (e) {
-      debugPrint("❌ Error fetching route: $e");
-    }
+    debugPrint("✅ Cleared old + drew new polyline to branch!");
+  } catch (e) {
+    debugPrint("❌ Error fetching route: $e");
   }
+}
 
-  Future<void> _clearPolyline() async {
-    if (_polylineManager != null) {
-      await _polylineManager!.deleteAll();
-    }
+Future<void> _clearPolyline() async {
+  if (_polylineManager != null) {
+    await _polylineManager!.deleteAll();
   }
+  if (_pointAnnotationManager != null) {
+    await _pointAnnotationManager!.deleteAll();
+  }
+}
+
+
+
 
   /// ✅ Filtering only
   /// ✅ Filtering only
@@ -517,37 +556,40 @@ List<Branch> get _filteredBranches {
   if (_forceViewAll) return filteredBranches;
 
   if (_searchPosition != null) {
-    const double searchRadius = 20000; // 20 km
-    final nearby = filteredBranches.where((b) {
-      final dist = geo.Geolocator.distanceBetween(
+  const double searchRadius = 20000; // 20 km
+  var nearby = filteredBranches.where((b) {
+    final dist = geo.Geolocator.distanceBetween(
+      _searchPosition!.latitude,
+      _searchPosition!.longitude,
+      b.latitude,
+      b.longitude,
+    );
+    return dist <= searchRadius;
+  }).toList();
+
+  // If none found in radius, just return ALL branches sorted by distance
+  if (nearby.isEmpty && filteredBranches.isNotEmpty) {
+    filteredBranches.sort((a, b) {
+      final da = geo.Geolocator.distanceBetween(
+        _searchPosition!.latitude,
+        _searchPosition!.longitude,
+        a.latitude,
+        a.longitude,
+      );
+      final db = geo.Geolocator.distanceBetween(
         _searchPosition!.latitude,
         _searchPosition!.longitude,
         b.latitude,
         b.longitude,
       );
-      return dist <= searchRadius;
-    }).toList();
-
-    if (nearby.isEmpty && filteredBranches.isNotEmpty) {
-      Branch? nearest;
-      double nearestDist = double.infinity;
-      for (final b in filteredBranches) {
-        final dist = geo.Geolocator.distanceBetween(
-          _searchPosition!.latitude,
-          _searchPosition!.longitude,
-          b.latitude,
-          b.longitude,
-        );
-        if (dist < nearestDist) {
-          nearest = b;
-          nearestDist = dist;
-        }
-      }
-      return nearest != null ? [nearest] : [];
-    }
-
-    return nearby;
+      return da.compareTo(db);
+    });
+    return filteredBranches; // 👈 keep ALL, not only 1 nearest
   }
+
+  return nearby;
+}
+
 
   if (_showNearbyOnly && _userPosition != null) {
     final nearby = filteredBranches.where((b) {
@@ -738,14 +780,43 @@ List<Branch> get _filteredBranches {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ServiceFilterButton(
-                        selectedServices: _selectedServiceIds,
-                        onApply: (newSelected) {
-                          setState(() {
-                            _selectedServiceIds = newSelected;
-                          });
-                        },
-                      ),
+                   ServiceFilterButton(
+  selectedServices: _selectedServiceIds,
+  onApply: (newSelected) async {  // Add async here
+    setState(() {
+      _selectedServiceIds = newSelected;
+    });
+
+    // Update markers on map after filter changes
+    await _updateBranchMarkers();
+
+    // Fit map to show only filtered branches
+    if (_filteredBranches.isNotEmpty) {
+      await _fitToBounds(_filteredBranches);
+    }
+
+    // Show popup with count
+    final count = _filteredBranches.length;
+    if (count > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("✅ $count branch(es) found"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("⚠️ No branches match your filters"),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  },
+),
+
                     ],
                   ),
                 ),
@@ -792,6 +863,7 @@ List<Branch> get _filteredBranches {
                               ),
                               onMapCreated: (map) async {
                                 _mapboxMap = map;
+                                await _updateBranchMarkers();
                               },
                             ),
                           ),
@@ -806,35 +878,38 @@ List<Branch> get _filteredBranches {
                           searchQuery: _searchQuery,
                           selectedServiceIds: _selectedServiceIds,
                           highlightTextBuilder: highlightText,
-                          onSelect: (branch) async {
-                            if (_mapboxMap != null) {
-                              final startPos = _searchPosition != null
-                                  ? mapbox.Point(
-                                      coordinates: mapbox.Position(
-                                        _searchPosition!.longitude,
-                                        _searchPosition!.latitude,
-                                      ),
-                                    )
-                                  : _userPosition != null
-                                      ? mapbox.Point(
-                                          coordinates: mapbox.Position(
-                                            _userPosition!.longitude,
-                                            _userPosition!.latitude,
-                                          ),
-                                        )
-                                      : null;
+                     onSelect: (branch) async {
+  if (_mapboxMap != null) {
+    final startPos = _searchPosition != null
+        ? mapbox.Point(
+            coordinates: mapbox.Position(
+              _searchPosition!.longitude,
+              _searchPosition!.latitude,
+            ),
+          )
+        : _userPosition != null
+            ? mapbox.Point(
+                coordinates: mapbox.Position(
+                  _userPosition!.longitude,
+                  _userPosition!.latitude,
+                ),
+              )
+            : null;
 
-                              final endPos = mapbox.Point(
-                                coordinates: mapbox.Position(
-                                    branch.longitude, branch.latitude),
-                              );
+    final endPos = mapbox.Point(
+      coordinates: mapbox.Position(branch.longitude, branch.latitude),
+    );
 
-                              if (startPos != null) {
-                                await _drawPolyline(
-                                    start: startPos, end: endPos);
-                              }
-                            }
-                          },
+    if (startPos != null) {
+      // ✅ Clear previous polyline + markers first
+      await _clearPolyline();
+
+      // 🚀 Draw ONLY the selected branch route
+      await _drawPolyline(start: startPos, end: endPos);
+    }
+  }
+},
+
                         ),
                       ),
                     ],
