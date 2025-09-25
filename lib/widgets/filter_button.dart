@@ -127,83 +127,86 @@ class _ServiceFilterSheetState extends State<_ServiceFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.85,
-      builder: (_, controller) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            // header
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      "Select Services (${_selected.length})",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: Color(0xFF0255C2),
+    return SafeArea(
+      top: false, // ⬅ keep AppBar visible
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.75, // 75% height on open
+        maxChildSize: 0.9,      // never go beyond 90%
+        minChildSize: 0.4,      // allow shrinking to 40%
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "Select Services (${_selected.length})",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Color(0xFF0255C2),
+                        ),
                       ),
                     ),
-                  ),
-                  TextButton(
-                      onPressed: () =>
-                          setState(() => _selected = widget.services
-                              .map((s) => s['id']!)
-                              .toList()),
-                      child: const Text("All")),
-                  TextButton(
-                      onPressed: () => setState(() => _selected.clear()),
-                      child: const Text("Clear")),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(context, _selected),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF0255C2),
+                    TextButton(
+                        onPressed: () => setState(() => _selected =
+                            widget.services.map((s) => s['id']!).toList()),
+                        child: const Text("All")),
+                    TextButton(
+                        onPressed: () => setState(() => _selected.clear()),
+                        child: const Text("Clear")),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, _selected),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF0255C2),
+                      ),
+                      child: const Text("Apply"),
                     ),
-                    child: const Text("Apply"),
-                  ),
-                ],
-              ),
-            ),
-            // search
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: "Search services...",
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // list
-            Expanded(
-              child: ListView.builder(
-                controller: controller,
-                itemCount: _filtered.length,
-                itemBuilder: (_, i) {
-                  final s = _filtered[i];
-                  return CheckboxListTile(
-                    value: _selected.contains(s['id']),
-                    onChanged: (_) => _toggle(s['id']!),
-                    title: Text(s['name']!),
-                    activeColor: const Color(0xFF0255C2),
-                  );
-                },
+              // search
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: "Search services...",
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                  ),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              // list
+              Expanded(
+                child: ListView.builder(
+                  controller: controller,
+                  itemCount: _filtered.length,
+                  itemBuilder: (_, i) {
+                    final s = _filtered[i];
+                    return CheckboxListTile(
+                      value: _selected.contains(s['id']),
+                      onChanged: (_) => _toggle(s['id']!),
+                      title: Text(s['name']!),
+                      activeColor: const Color(0xFF0255C2),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

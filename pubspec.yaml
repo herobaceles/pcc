@@ -17,9 +17,9 @@ dependencies:
   cloud_firestore: ^5.4.0
   firebase_auth: ^5.2.0
 
-  # ✅ Use the new Mapbox SDK only (null-safe)
+  # ✅ Use the new Mapbox SDK (null-safe)
   mapbox_maps_flutter: ^2.1.0
-  mapbox_search: ^4.3.2   # use this for search/autocomplete
+  mapbox_search: ^4.3.2
 
   # Cupertino Icons
   cupertino_icons: ^1.0.8
@@ -33,16 +33,19 @@ dependencies:
   # HTTP client
   http: ^1.1.0
   connectivity_plus: ^6.0.3
+
   # Huawei Location (optional)
-  huawei_location: ^6.11.0+300  # latest HMS location plugin
-  
+  huawei_location: ^6.11.0+300
+
   # Environment variables
   flutter_dotenv: ^6.0.0
+
+  # ✅ Needed for onboarding persistence
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   flutter_lints: ^5.0.0
 
 flutter:
@@ -51,4 +54,7 @@ flutter:
   assets:
     - assets/marker.png
     - assets/PCCSUS.png
+    - assets/WELCOME.png
+    - assets/location.png
+    - assets/branch.png
     - .env

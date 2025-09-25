@@ -49,10 +49,12 @@ class _SearchFieldState extends State<SearchField> {
 
   Future<void> _onSubmit(String value) async {
     if (value.trim().isEmpty) return;
+
+    _removeOverlay(); // ✅ always close suggestions first
+
     final results = await widget.onFetchSuggestions(value);
     if (results.isNotEmpty) {
       widget.onSuggestionSelected(results.first);
-      _removeOverlay();
     }
   }
 
@@ -67,13 +69,13 @@ class _SearchFieldState extends State<SearchField> {
         child: CompositedTransformFollower(
           link: _layerLink,
           showWhenUnlinked: false,
-          offset: const Offset(0, 50), // dropdown just below
+          offset: const Offset(0, 50), // dropdown just below field
           child: Material(
-            color: Colors.white, // ✅ White background
+            color: Colors.white,
             elevation: 4,
             borderRadius: BorderRadius.circular(8),
             child: ListView.builder(
-              padding: EdgeInsets.zero, // ✅ No space before first item
+              padding: EdgeInsets.zero,
               shrinkWrap: true,
               itemCount: _suggestions.length,
               itemBuilder: (context, i) {
@@ -81,11 +83,11 @@ class _SearchFieldState extends State<SearchField> {
                 return ListTile(
                   title: Text(
                     suggestion["place"],
-                    style: const TextStyle(color: Colors.black), // dark text
+                    style: const TextStyle(color: Colors.black),
                   ),
                   onTap: () {
                     widget.onSuggestionSelected(suggestion);
-                    _removeOverlay();
+                    _removeOverlay(); // ✅ close when suggestion tapped
                   },
                 );
               },
@@ -138,10 +140,11 @@ class _SearchFieldState extends State<SearchField> {
                   final value = widget.controller?.text ?? "";
                   if (value.trim().isEmpty) return;
 
+                  _removeOverlay(); // ✅ close dropdown right away
+
                   final results = await widget.onFetchSuggestions(value);
                   if (results.isNotEmpty) {
                     widget.onSuggestionSelected(results.first);
-                    _removeOverlay();
                   }
                 },
                 style: ButtonStyle(

@@ -7,6 +7,8 @@ class ActionButtons extends StatefulWidget {
   final bool isNearbyMode; // true = showing Nearby, false = showing All
   final bool isLoading;
   final int nearbyCount;
+  final bool isLocationAvailable; // ✅ new parameter
+  final VoidCallback? onRequestLocation; // ✅ new optional callback
 
   const ActionButtons({
     super.key,
@@ -15,6 +17,8 @@ class ActionButtons extends StatefulWidget {
     required this.isNearbyMode,
     required this.isLoading,
     this.nearbyCount = 0,
+    this.isLocationAvailable = true, // default true
+    this.onRequestLocation, // optional: open settings or retry
   });
 
   static const Color pccBlue = Color(0xFF0255C2);
@@ -77,9 +81,42 @@ class _ActionButtonsState extends State<ActionButtons> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Fallback if location is not available
+    if (!widget.isLocationAvailable) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 0,
+          ),
+          onPressed: widget.onRequestLocation ??
+              () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Please enable location services in settings."),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              },
+          icon: const Icon(Icons.location_off),
+          label: const Text(
+            "Please turn on location to view Nearby branches",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
+
+    // ✅ Normal button when location is available
     final buttonLabel = widget.isNearbyMode
         ? (_showHint ? "Click to view all list" : "Nearby (${widget.nearbyCount})")
-        : (_showHint ? "Click to view Nearby Branches" : "All Branches (35)");
+        : (_showHint ? "Click to view Nearby Branches" : "All Branches");
 
     final glowingButton = ElevatedButton.icon(
       style: ElevatedButton.styleFrom(

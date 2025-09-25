@@ -46,22 +46,37 @@ class _BranchMapPageState extends State<BranchMapPage> {
   final TextEditingController _searchController = TextEditingController();
   List<String> _selectedServiceIds = [];
 
-  @override
-  void initState() {
-    super.initState();
-    _listenBranches();
-    _initUserLocationAndNearbyBranches();
+@override
+void initState() {
+  super.initState();
+  _listenBranches();
+  _initUserLocationAndNearbyBranches();
 
-    Connectivity().onConnectivityChanged.listen((status) {
-      setState(() {
-        if (status is ConnectivityResult) {
-          _isOnline = status != ConnectivityResult.none;
-        } else if (status is List<ConnectivityResult>) {
-          _isOnline = !status.contains(ConnectivityResult.none);
-        }
-      });
+  // ✅ Listen for connectivity
+  Connectivity().onConnectivityChanged.listen((status) {
+    setState(() {
+      if (status is ConnectivityResult) {
+        _isOnline = status != ConnectivityResult.none;
+      } else if (status is List<ConnectivityResult>) {
+        _isOnline = !status.contains(ConnectivityResult.none);
+      }
     });
-  }
+  });
+
+  // ✅ Listen for location service ON/OFF
+  geo.Geolocator.getServiceStatusStream().listen((geo.ServiceStatus status) {
+    if (status == geo.ServiceStatus.enabled) {
+      _initUserLocationAndNearbyBranches(); // auto reload when ON
+    } else {
+      setState(() {
+        _userPosition = null; // disable Nearby
+        _showNearbyOnly = false;
+        _forceViewAll = true;
+      });
+    }
+  });
+}
+
 
  Future<void> _updateBranchMarkers() async {
   if (_mapboxMap == null) return;
@@ -81,7 +96,7 @@ class _BranchMapPageState extends State<BranchMapPage> {
         ),
         iconImage: "marker-15",
         iconSize: 1.5,
-        textField: branch.name,
+        // textField: branch.name,
         textColor: Colors.black.value,
         textHaloColor: Colors.white.value,
         textHaloWidth: 2,
@@ -106,130 +121,209 @@ void _listenBranches() {
   });
 }
 
-  /// ✅ Init location
-  Future<void> _initUserLocationAndNearbyBranches() async {
-    setState(() => _isSearching = true);
-    try {
-      geo.Position? pos;
+  /// 🔹 Show modal if permission is missing
+void _showLocationPermissionModal() {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.location_off, color: Colors.red, size: 28),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "Location Permission Needed",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0255C2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              "To see nearby PCC SUPP branches, please enable location access.\n\n"
+              "Path: Settings → App → Permissions → Allow Location",
+              style: TextStyle(fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    geo.Geolocator.openAppSettings(); // 🔑 open system settings
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0255C2),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text("Open Settings"),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
-      if (Platform.isAndroid) {
-        final serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
-        var permission = await geo.Geolocator.checkPermission();
+/// 🔹 Permission handler
+Future<bool> _handleLocationPermission() async {
+  final serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
+  if (!serviceEnabled) {
+    _showLocationPermissionModal();
+    return false;
+  }
 
-        if (serviceEnabled &&
-            permission != geo.LocationPermission.deniedForever) {
-          if (permission == geo.LocationPermission.denied) {
-            permission = await geo.Geolocator.requestPermission();
-          }
-          if (permission == geo.LocationPermission.always ||
-              permission == geo.LocationPermission.whileInUse) {
-            pos = await geo.Geolocator.getCurrentPosition(
-              desiredAccuracy: geo.LocationAccuracy.high,
-            );
-          }
-        }
-
-        // fallback Huawei
-        if (pos == null) {
-          try {
-            final locationService = hms.FusedLocationProviderClient();
-            final request = hms.LocationRequest()
-              ..priority = hms.LocationRequest.PRIORITY_HIGH_ACCURACY
-              ..interval = 10000
-              ..numUpdates = 1;
-
-            final completer = Completer<hms.Location?>();
-            final sub =
-                locationService.onLocationData?.listen((hms.Location location) {
-              if (!completer.isCompleted) completer.complete(location);
-            });
-
-            final reqCode =
-                await locationService.requestLocationUpdates(request);
-            final hmsLoc =
-                await completer.future.timeout(const Duration(seconds: 10));
-
-            if (reqCode != null) {
-              await locationService.removeLocationUpdates(reqCode);
-            }
-            await sub?.cancel();
-
-            if (hmsLoc != null) {
-              pos = geo.Position(
-                latitude: hmsLoc.latitude!,
-                longitude: hmsLoc.longitude!,
-                timestamp: DateTime.fromMillisecondsSinceEpoch(
-                    hmsLoc.time ?? DateTime.now().millisecondsSinceEpoch),
-                accuracy: 0.0,
-                altitude: hmsLoc.altitude?.toDouble() ?? 0.0,
-                altitudeAccuracy: 0.0,
-                heading: hmsLoc.bearing?.toDouble() ?? 0.0,
-                headingAccuracy: 0.0,
-                speed: hmsLoc.speed?.toDouble() ?? 0.0,
-                speedAccuracy: 0.0,
-              );
-            }
-          } catch (e) {
-            debugPrint("❌ Huawei Location error: $e");
-          }
-        }
-      } else {
-        final serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
-        if (!serviceEnabled) return;
-
-        var permission = await geo.Geolocator.checkPermission();
-        if (permission == geo.LocationPermission.denied) {
-          permission = await geo.Geolocator.requestPermission();
-        }
-        if (permission == geo.LocationPermission.always ||
-            permission == geo.LocationPermission.whileInUse) {
-          pos = await geo.Geolocator.getCurrentPosition(
-            desiredAccuracy: geo.LocationAccuracy.high,
-          );
-        }
-      }
-
-      if (!mounted || pos == null) return;
-
-      setState(() {
-        _userPosition = pos;
-        _showNearbyOnly = true;
-        _forceViewAll = false;
-      });
-
-      if (_filteredBranches.isNotEmpty) {
-        await _fitToBounds(_filteredBranches);
-      }
-    } catch (e) {
-      debugPrint("Error getting location: $e");
-    } finally {
-      if (mounted) setState(() => _isSearching = false);
+  var permission = await geo.Geolocator.checkPermission();
+  if (permission == geo.LocationPermission.denied) {
+    permission = await geo.Geolocator.requestPermission();
+    if (permission == geo.LocationPermission.denied) {
+      _showLocationPermissionModal();
+      return false;
     }
   }
 
-  Future<void> _flyToUserLocation() async {
-    if (_userPosition == null) {
-      await _initUserLocationAndNearbyBranches();
+  if (permission == geo.LocationPermission.deniedForever) {
+    _showLocationPermissionModal();
+    return false;
+  }
+
+  return true;
+}
+
+/// ✅ Init user location and nearby branches
+Future<void> _initUserLocationAndNearbyBranches() async {
+  setState(() => _isSearching = true);
+
+  final hasPermission = await _handleLocationPermission();
+  if (!hasPermission) {
+    setState(() => _isSearching = false);
+    return;
+  }
+
+  try {
+    geo.Position? pos;
+
+    if (Platform.isAndroid) {
+      pos = await geo.Geolocator.getCurrentPosition(
+        desiredAccuracy: geo.LocationAccuracy.high,
+      );
+
+      // 🔑 If Geolocator fails → fallback Huawei
+      if (pos == null) {
+        try {
+          final locationService = hms.FusedLocationProviderClient();
+          final request = hms.LocationRequest()
+            ..priority = hms.LocationRequest.PRIORITY_HIGH_ACCURACY
+            ..interval = 10000
+            ..numUpdates = 1;
+
+          final completer = Completer<hms.Location?>();
+          final sub = locationService.onLocationData?.listen((hms.Location loc) {
+            if (!completer.isCompleted) completer.complete(loc);
+          });
+
+          final reqCode = await locationService.requestLocationUpdates(request);
+          final hmsLoc =
+              await completer.future.timeout(const Duration(seconds: 10));
+
+          if (reqCode != null) {
+            await locationService.removeLocationUpdates(reqCode);
+          }
+          await sub?.cancel();
+
+          if (hmsLoc != null) {
+            pos = geo.Position(
+              latitude: hmsLoc.latitude!,
+              longitude: hmsLoc.longitude!,
+              timestamp: DateTime.fromMillisecondsSinceEpoch(
+                  hmsLoc.time ?? DateTime.now().millisecondsSinceEpoch),
+              accuracy: 0.0,
+              altitude: hmsLoc.altitude?.toDouble() ?? 0.0,
+              altitudeAccuracy: 0.0,
+              heading: hmsLoc.bearing?.toDouble() ?? 0.0,
+              headingAccuracy: 0.0,
+              speed: hmsLoc.speed?.toDouble() ?? 0.0,
+              speedAccuracy: 0.0,
+            );
+          }
+        } catch (e) {
+          debugPrint("❌ Huawei Location error: $e");
+        }
+      }
+    } else {
+      pos = await geo.Geolocator.getCurrentPosition(
+        desiredAccuracy: geo.LocationAccuracy.high,
+      );
     }
-    if (_userPosition == null) return;
+
+    if (!mounted || pos == null) return;
 
     setState(() {
+      _userPosition = pos;
       _showNearbyOnly = true;
-      _searchPosition = null;
       _forceViewAll = false;
-      _clearPolyline();
     });
 
     if (_filteredBranches.isNotEmpty) {
-      final positions = _filteredBranches
-          .map((b) => mapbox.Position(b.longitude, b.latitude))
-          .toList();
-      positions.add(mapbox.Position(
-        _userPosition!.longitude,
-        _userPosition!.latitude,
-      ));
+      await _fitToBounds(_filteredBranches);
+    }
+  } catch (e) {
+    debugPrint("Error getting location: $e");
+  } finally {
+    if (mounted) setState(() => _isSearching = false);
+  }
+}
 
-      await _fitPositionsBounds(positions);
+/// ✅ Fly to user location
+Future<void> _flyToUserLocation() async {
+  final hasPermission = await _handleLocationPermission();
+  if (!hasPermission) return;
+
+  if (_userPosition == null) {
+    await _initUserLocationAndNearbyBranches();
+  }
+  if (_userPosition == null) return;
+
+  setState(() {
+    _showNearbyOnly = true;
+    _searchPosition = null;
+    _forceViewAll = false;
+    _clearPolyline();
+  });
+
+  if (_filteredBranches.isNotEmpty) {
+    final positions = _filteredBranches
+        .map((b) => mapbox.Position(b.longitude, b.latitude))
+        .toList();
+    positions.add(mapbox.Position(
+      _userPosition!.longitude,
+      _userPosition!.latitude,
+    ));
+
+    await _fitPositionsBounds(positions);
+  
+
 
       // ✅ also draw route to nearest branch
       Branch nearest = _filteredBranches.first;
@@ -552,11 +646,9 @@ List<Branch> get _filteredBranches {
     }).toList();
   }
 
-  if (_forceViewAll) return filteredBranches;
-
-  // ✅ Case 1: User searched a location
+  // 🚨 If user searched a location → apply on filtered list
   if (_searchPosition != null) {
-    const double searchRadius = 20000; // 20 km radius around searched point
+    const double searchRadius = 20000; // 20 km radius
     var nearby = filteredBranches.where((b) {
       final dist = geo.Geolocator.distanceBetween(
         _searchPosition!.latitude,
@@ -567,20 +659,31 @@ List<Branch> get _filteredBranches {
       return dist <= searchRadius;
     }).toList();
 
-    // ✅ If branches exist inside this location → show them only
-    if (nearby.isNotEmpty) {
-      return nearby;
+    // Sort by distance
+    nearby.sort((a, b) {
+      final da = geo.Geolocator.distanceBetween(
+          _searchPosition!.latitude, _searchPosition!.longitude,
+          a.latitude, a.longitude);
+      final db = geo.Geolocator.distanceBetween(
+          _searchPosition!.latitude, _searchPosition!.longitude,
+          b.latitude, b.longitude);
+      return da.compareTo(db);
+    });
+
+    if (nearby.isNotEmpty) return nearby;
+
+    // ❌ If filters are active and no branch matches → return empty
+    if (_selectedServiceIds.isNotEmpty) {
+      return [];
     }
 
-    // ✅ If no branch in that location → show 1 nearest branch only
+    // ✅ Otherwise fallback to nearest branch (only if no filter applied)
     Branch? nearest;
     double nearestDist = double.infinity;
     for (final b in filteredBranches) {
       final dist = geo.Geolocator.distanceBetween(
-        _searchPosition!.latitude,
-        _searchPosition!.longitude,
-        b.latitude,
-        b.longitude,
+        _searchPosition!.latitude, _searchPosition!.longitude,
+        b.latitude, b.longitude,
       );
       if (dist < nearestDist) {
         nearest = b;
@@ -590,31 +693,37 @@ List<Branch> get _filteredBranches {
     return nearest != null ? [nearest] : [];
   }
 
-  // ✅ Case 2: Nearby mode (based on user location)
+  // ✅ If no search → nearby or view-all logic
+  if (_forceViewAll) return filteredBranches;
+
   if (_showNearbyOnly && _userPosition != null) {
     final nearby = filteredBranches.where((b) {
       final distance = geo.Geolocator.distanceBetween(
-        _userPosition!.latitude,
-        _userPosition!.longitude,
-        b.latitude,
-        b.longitude,
+        _userPosition!.latitude, _userPosition!.longitude,
+        b.latitude, b.longitude,
       );
       return distance <= 10000; // 10 km
     }).toList();
 
-    if (nearby.isNotEmpty) {
-      return nearby;
-    }
+    nearby.sort((a, b) {
+      final da = geo.Geolocator.distanceBetween(
+          _userPosition!.latitude, _userPosition!.longitude,
+          a.latitude, a.longitude);
+      final db = geo.Geolocator.distanceBetween(
+          _userPosition!.latitude, _userPosition!.longitude,
+          b.latitude, b.longitude);
+      return da.compareTo(db);
+    });
 
-    // If no nearby → return only 1 nearest branch
+    if (nearby.isNotEmpty) return nearby;
+
+    // ✅ fallback nearest (filter already applied above)
     Branch? nearest;
     double nearestDist = double.infinity;
     for (final b in filteredBranches) {
       final dist = geo.Geolocator.distanceBetween(
-        _userPosition!.latitude,
-        _userPosition!.longitude,
-        b.latitude,
-        b.longitude,
+        _userPosition!.latitude, _userPosition!.longitude,
+        b.latitude, b.longitude,
       );
       if (dist < nearestDist) {
         nearest = b;
@@ -624,9 +733,23 @@ List<Branch> get _filteredBranches {
     return nearest != null ? [nearest] : [];
   }
 
-  // ✅ Default: return all
+  // ✅ Default: return all (sorted if user location exists)
+  if (_userPosition != null) {
+    filteredBranches.sort((a, b) {
+      final da = geo.Geolocator.distanceBetween(
+          _userPosition!.latitude, _userPosition!.longitude,
+          a.latitude, a.longitude);
+      final db = geo.Geolocator.distanceBetween(
+          _userPosition!.latitude, _userPosition!.longitude,
+          b.latitude, b.longitude);
+      return da.compareTo(db);
+    });
+  }
+
   return filteredBranches;
 }
+
+
 
 
 
@@ -804,7 +927,7 @@ List<Branch> get _filteredBranches {
     if (count > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("✅ $count branch(es) found"),
+          content: Text("$count branch(es) found"),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
         ),
